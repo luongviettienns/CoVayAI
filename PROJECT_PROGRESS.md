@@ -17,7 +17,8 @@
   - `python-performance-optimization` & `performance-profiling`: Tối ưu hiệu năng, profiling MCTS simulation
   - `python-testing-patterns`: Kiểm thử chuyên sâu, TDD, fixtures
   - `python-patterns` & `python-pro`: Thiết kế module theo chuẩn Python 3.12+
-- [ ] Xác nhận với người dùng về môi trường (PyTorch / GPU / CPU) và mục tiêu giai đoạn tiếp theo.
+- [x] Xác nhận môi trường phần cứng: GPU NVIDIA RTX 3050 (4GB VRAM, CUDA 12.7), Python 3.13.15, PyTorch 2.6.0+cu124.
+- [x] Khởi tạo kho Git cục bộ và đẩy mã nguồn ban đầu lên GitHub: `https://github.com/luongviettienns/CoVayAI.git` (nhánh `main`).
 
 ### Phase 1: Go Engine Core (`go/`)
 - [ ] `go/zobrist.py`: Mã hóa Zobrist hash cho bàn cờ $N \times N$, phát hiện Positional Superko.

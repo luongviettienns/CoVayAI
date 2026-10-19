@@ -1,0 +1,46 @@
+"""Configuration for 9x9 AlphaZero Go engine."""
+
+from dataclasses import dataclass
+
+# --- Luật cờ ---
+BOARD_SIZE: int = 9
+KOMI: float = 7.5          # area scoring (Tromp-Taylor), superko
+MAX_MOVES: int = 162       # 2 * N^2, quá số này thì ép kết thúc ván
+
+# --- Mạng nơ-ron ---
+INPUT_PLANES: int = 17     # 8 nước gần nhất mỗi bên + 1 plane lượt đi
+NUM_BLOCKS: int = 6
+NUM_FILTERS: int = 96      # ~1M tham số
+USE_AMP: bool = True       # fp16 mixed precision
+
+# --- MCTS (self-play) ---
+NUM_SIMS: int = 200
+C_PUCT: float = 1.5
+DIRICHLET_ALPHA: float = 0.25
+DIRICHLET_EPS: float = 0.25
+TEMP_MOVES: int = 12       # 12 nước đầu: tau = 1, sau đó tau -> 0
+RESIGN_THRESHOLD: float = -0.9
+RESIGN_DISABLE_FRAC: float = 0.10  # 10% ván không cho resign để kiểm tra false-positive
+
+# --- Self-play song song ---
+NUM_WORKERS: int = 5       # số luồng/tiến trình sinh ván
+INFER_BATCH_SIZE: int = 64 # gom leaf thành batch cho GPU
+GAMES_PER_ITER: int = 100
+
+# --- Huấn luyện ---
+OPTIMIZER: str = "adam"
+LR: float = 1e-3           # giảm x0.1 khi loss đứng yên ~20 iteration
+WEIGHT_DECAY: float = 1e-4
+BATCH_SIZE: int = 256
+TRAIN_STEPS: int = 400     # số batch mỗi iteration
+BUFFER_SIZE: int = 200_000 # số mẫu (state, pi, z)
+AUGMENT: bool = True       # 8 phép đối xứng D4, áp dụng lúc lấy batch
+NUM_ITERS: int = 150
+
+# --- Arena ---
+ARENA_GAMES: int = 50
+ARENA_SIMS: int = 200      # tau = 0, không noise
+WIN_THRESHOLD: float = 0.55
+
+# --- Lưu trữ ---
+CHECKPOINT_EVERY: int = 1  # lưu mỗi iteration để resume được

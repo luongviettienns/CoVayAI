@@ -20,6 +20,7 @@ class Board:
         self.zobrist = ZobristHash(board_size=size, seed=seed)
         self.current_position_hash = 0
         self.history_positions: Set[int] = {self.current_position_hash}
+        self.history_grids: List[np.ndarray] = [self.grid.copy()]
         
         # Precompute neighbors for every coordinate (r, c)
         self._neighbors: List[List[List[Tuple[int, int]]]] = [
@@ -140,11 +141,13 @@ class Board:
 
         if action == self.pass_action:
             self.consecutive_passes += 1
+            self.history_grids.append(self.grid.copy())
         else:
             self.consecutive_passes = 0
             self.grid = new_grid
             self.current_position_hash = new_pos_hash
             self.history_positions.add(new_pos_hash)
+            self.history_grids.append(self.grid.copy())
 
         self.current_player = opponent(self.current_player)
         self.move_count += 1
@@ -178,4 +181,5 @@ class Board:
         b.move_count = self.move_count
         b.current_position_hash = self.current_position_hash
         b.history_positions = set(self.history_positions)
+        b.history_grids = [g.copy() for g in self.history_grids[-8:]]
         return b

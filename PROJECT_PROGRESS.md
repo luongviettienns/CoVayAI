@@ -26,10 +26,11 @@
 - [x] `go/scoring.py`: Thuật toán tính điểm diện tích (Area scoring - Tromp-Taylor rules), komi 7.5, xác định thắng/thua $z \in \{+1, -1\}$.
 - [x] `tests/test_go/`: Bộ kiểm thử toàn diện gồm 18 bài test (Zobrist determinism/uniqueness/incremental, bắt đơn/đa quân, cấm tự sát & ngoại lệ bắt quân, superko, seki, occupied point rejection, v.v.).
 
-### Phase 2: Neural Network Architecture (`nn/`)
-- [ ] `nn/features.py`: Trích xuất không gian đặc trưng đa kênh $N \times N \times C$ (16 plane lịch sử + 1 plane lượt đi), chuẩn hóa perspective (canonical form).
-- [ ] `nn/model.py`: Mạng Residual Dual-Head (Backbone $B$ Residual blocks, Policy Head $N^2+1$, Value Head $\tanh$).
-- [ ] `tests/test_nn/`: Kiểm tra kích thước tensor, forward pass, backward pass, đối xứng tensor.
+### Phase 2: Neural Network Architecture (`nn/`) [HOÀN THÀNH - 8/8 Tests Passed & CUDA Verified]
+- [x] `config.py`: Khởi tạo hệ thống siêu tham số AlphaZero chuẩn (9x9, 6 ResBlocks, 96 filters, fp16, c_puct 1.5, batch size 256, v.v.).
+- [x] `nn/features.py`: Trích xuất đặc trưng đa kênh 17-plane (8 frames quân ta + 8 frames quân địch + 1 frame lượt đi), chuẩn hóa canonical view; tạo 8 phép đối xứng nhóm $D_4$ giữ bất biến xác suất pass.
+- [x] `nn/model.py`: Mạng Residual Dual-Head $f_\theta(s) = (p, v)$ chuẩn AlphaZero (~1M parameters), hỗ trợ GPU RTX 3050 CUDA 12.7, fast inference `predict()` với illegal moves masking.
+- [x] `tests/test_nn/`: Bộ 8 bài test kiểm thử tensor shapes, bounds, gradient backprop, masking xác suất, đối xứng $D_4$ và thực thi CUDA trên phần cứng thật.
 
 ### Phase 3: Monte Carlo Tree Search (`mcts/`)
 - [ ] `mcts/node.py`: Cấu trúc nút MCTS ($N, W, Q, P$, liên kết cha-con).

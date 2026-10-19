@@ -107,12 +107,16 @@ pytest
 ```
 
 ### 2. Bắt đầu vòng lặp huấn luyện AlphaZero:
+Hệ thống tự động hiển thị thanh tiến trình trực quan (`tqdm`) theo thời gian thực và tự động lưu `buffer.pkl` định kỳ (hỗ trợ tự động resume):
 ```bash
-# Huấn luyện mặc định trên GPU với cấu hình chuẩn
-python main.py
+# Huấn luyện nhanh để theo dõi từng vòng (khuyên dùng trên máy cá nhân):
+python main.py --iters 50 --games 8 --sims 60 --train-steps 100 --batch-size 64 --arena-games 6
 
-# Hoặc tùy biến tham số theo nhu cầu:
+# Hoặc huấn luyện chuẩn sâu:
 python main.py --iters 50 --games 20 --sims 100 --train-steps 200 --batch-size 128 --arena-games 20
+
+# Tự động tiếp tục từ checkpoint và buffer cũ:
+python main.py --resume
 ```
 
 ### 3. Khởi động GTP Server (Kết nối Sabaki / Lizzie / Katrain):

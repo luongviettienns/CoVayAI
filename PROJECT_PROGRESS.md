@@ -86,5 +86,7 @@
   - Khởi tạo cấu hình linh hoạt qua `PipelineConfig` và CLI args (`--iters`, `--games`, `--sims`, `--train-steps`, `--batch-size`, `--arena-games`, `--device`, v.v.).
   - Vòng lặp tự động khép kín: Self-Play $\to$ Trích xuất đặc trưng $\to$ Đẩy Replay Buffer $\to$ Huấn luyện Candidate Model (Mixed Precision FP16 + L2 + Grad Clip) $\to$ Đấu đối kháng Arena $\to$ Cập nhật Elo và phê duyệt mô hình $\to$ Lưu checkpoint `checkpoint_iter_{i}.pt`, `best_model.pt`, `ratings.json`.
   - Cơ chế rollback an toàn: nếu mô hình mới không đạt tỷ lệ thắng $\ge 55\%$, tự động hoàn nguyên trọng số về `best_model`.
-- [x] `tests/test_pipeline.py`: Bài test tích hợp end-to-end kiểm chứng vòng lặp hoàn chỉnh (từ ván cờ tự chơi qua MCTS, tối ưu hóa gradient, đấu trường đối đầu cho tới xuất file checkpoint).
+  - **Live Progress Bar (Mục 1)**: Tích hợp thanh tiến trình thời gian thực (`tqdm`) trên cả 3 giai đoạn: Self-Play (hiển thị số nước, người thắng, tổng mẫu), Training (hiển thị loss tức thời), Arena (hiển thị tỷ số thắng/thua và winrate trực tiếp).
+  - **Buffer Persistence & Auto-Resume (Mục 3)**: Tự động lưu `buffer.pkl` định kỳ trên đĩa; hỗ trợ cờ `--resume` (mặc định bật) tự động nhận diện checkpoint cũ, khôi phục Replay Buffer và tiếp tục học liền mạch từ thế hệ trước mà không mất dữ liệu.
+- [x] `tests/test_pipeline.py`: Bài test tích hợp end-to-end kiểm chứng vòng lặp hoàn chỉnh (từ ván cờ tự chơi qua MCTS, tối ưu hóa gradient, đấu trường đối đầu cho tới xuất file checkpoint, `buffer.pkl` và tự động khôi phục khi resume).
 - [x] **Toàn bộ 58/58 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 8 modules của dự án!

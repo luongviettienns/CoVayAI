@@ -120,12 +120,18 @@ class Arena:
         baseline_model,
         num_games: int = 50,
         verbose: bool = False,
+        progress_bar: bool = False,
     ) -> ArenaResult:
         """Play num_games alternating colors between candidate and baseline.
 
         Even game indices: candidate is Black, baseline is White.
         Odd game indices: baseline is Black, candidate is White.
         """
+        try:
+            from tqdm import tqdm
+        except ImportError:
+            tqdm = None
+
         candidate_wins = 0
         baseline_wins = 0
         draws = 0
@@ -138,7 +144,13 @@ class Arena:
         if hasattr(baseline_model, "eval"):
             baseline_model.eval()
 
-        for game_idx in range(num_games):
+        iterator = range(num_games)
+        pbar = None
+        if progress_bar and tqdm is not None:
+            pbar = tqdm(iterator, desc="Arena Eval", unit="game", dynamic_ncols=True)
+            iterator = pbar
+
+        for game_idx in iterator:
             if game_idx % 2 == 0:
                 # Candidate plays Black
                 winner, moves = play_arena_game(
@@ -180,16 +192,23 @@ class Arena:
                 else:
                     draws += 1
 
-            if verbose:
+            if pbar is not None:
+                curr_wr = (candidate_wins + 0.5 * draws) / (game_idx + 1)
+                pbar.set_postfix({
+                    "Cand_W": candidate_wins,
+                    "Base_W": baseline_wins,
+                    "Cand_WR": f"{curr_wr*100:.1f}%",
+                })
+            elif verbose:
                 is_candidate_win = (
                     (winner > 0 and game_idx % 2 == 0)
                     or (winner < 0 and game_idx % 2 != 0)
                 )
                 print(
-                    f"Arena Game {game_idx + 1}/{num_games}: "
+                    f"   -> [Arena {game_idx + 1}/{num_games}] "
                     f"Candidate {'B' if game_idx % 2 == 0 else 'W'}, "
-                    f"Winner: {'Candidate' if is_candidate_win else 'Baseline'}, "
-                    f"Moves: {moves}"
+                    f"Thắng: {'Candidate' if is_candidate_win else 'Baseline'}, "
+                    f"Nước: {moves}"
                 )
 
         candidate_win_rate = (

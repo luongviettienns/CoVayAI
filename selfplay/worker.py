@@ -109,14 +109,27 @@ def generate_selfplay_games(
     resign_disable_frac: float = 0.10,
     max_moves: Optional[int] = None,
     device: Optional[torch.device] = None,
+    progress_bar: bool = False,
+    game_callback=None,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     """
     Generate multiple self-play games sequentially.
     Disables resignation for a fraction of games (e.g. 10%) to verify against false-positive resigns.
+    Supports real-time progress bars via tqdm and per-game callbacks.
     """
-    all_samples = []
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        tqdm = None
 
-    for game_idx in range(num_games):
+    all_samples = []
+    iterator = range(num_games)
+    pbar = None
+    if progress_bar and tqdm is not None:
+        pbar = tqdm(iterator, desc="Self-Play", unit="game", dynamic_ncols=True)
+        iterator = pbar
+
+    for game_idx in iterator:
         # Disable resignation for a subset of games
         disable_resign = (np.random.random() < resign_disable_frac)
 
@@ -134,5 +147,18 @@ def generate_selfplay_games(
             device=device,
         )
         all_samples.extend(game_samples)
+
+        winner_str = "B" if game_samples and game_samples[-1][2] > 0 else "W"
+        if pbar is not None:
+            pbar.set_postfix({
+                "moves": len(game_samples),
+                "winner": winner_str,
+                "total_samples": len(all_samples),
+            })
+        elif progress_bar:
+            print(f"   -> [Self-Play {game_idx + 1}/{num_games}] {len(game_samples)} nước | Người thắng: {winner_str} | Tổng mẫu: {len(all_samples)}")
+
+        if game_callback is not None:
+            game_callback(game_idx, game_samples)
 
     return all_samples

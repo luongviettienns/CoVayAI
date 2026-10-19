@@ -79,16 +79,28 @@ class Trainer:
         steps: int = 400,
         batch_size: int = 256,
         augment: bool = True,
+        progress_bar: bool = False,
     ) -> Dict[str, float]:
         """Train over K steps sampled from the replay buffer and return average metrics."""
         if len(replay_buffer) == 0:
             return {"total_loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
 
+        try:
+            from tqdm import tqdm
+        except ImportError:
+            tqdm = None
+
         total_loss_accum = 0.0
         policy_loss_accum = 0.0
         value_loss_accum = 0.0
 
-        for _ in range(steps):
+        iterator = range(steps)
+        pbar = None
+        if progress_bar and tqdm is not None:
+            pbar = tqdm(iterator, desc="Training", unit="step", dynamic_ncols=True)
+            iterator = pbar
+
+        for step_idx in iterator:
             states, target_pis, target_zs = replay_buffer.sample_batch(
                 batch_size=batch_size, augment=augment
             )
@@ -97,6 +109,13 @@ class Trainer:
             total_loss_accum += metrics["total_loss"]
             policy_loss_accum += metrics["policy_loss"]
             value_loss_accum += metrics["value_loss"]
+
+            if pbar is not None:
+                pbar.set_postfix({
+                    "loss": f"{metrics['total_loss']:.4f}",
+                    "p_loss": f"{metrics['policy_loss']:.4f}",
+                    "v_loss": f"{metrics['value_loss']:.4f}",
+                })
 
         return {
             "total_loss": total_loss_accum / steps,

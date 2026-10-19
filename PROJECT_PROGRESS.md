@@ -43,10 +43,14 @@
   - Tái sử dụng cây con (Subtree reuse qua `advance_root`).
 - [x] `tests/test_mcts/`: Bộ kiểm thử toàn diện gồm 8 bài test (cấu trúc node, PUCT formula, visit counts sum invariant, temperature, Dirichlet noise, subtree reuse, và test tích hợp trực tiếp với AlphaZeroNet trên GPU).
 
-### Phase 4: Self-Play & Replay Buffer (`selfplay/`)
-- [ ] `selfplay/replay_buffer.py`: Bộ nhớ đệm trượt (100k-500k mẫu), Data Augmentation với 8 phép đối xứng nhóm $D_4$ (xoay + lật).
-- [ ] `selfplay/worker.py`: Vòng lặp tự chơi sinh ván đấu $(s, \pi, z)$, cơ chế resign threshold (-0.9), giới hạn số nước đi ($2N^2$).
-- [ ] `tests/test_selfplay/`: Test worker sinh dữ liệu mẫu, kiểm tra tính toàn vẹn của Replay Buffer.
+### Phase 4: Self-Play & Replay Buffer (`selfplay/`) [HOÀN THÀNH - 5/5 Tests Passed]
+- [x] `selfplay/replay_buffer.py`: Bộ nhớ đệm trượt ReplayBuffer dung lượng 200k mẫu (deque sliding window), trích xuất batch ngẫu nhiên kèm Data Augmentation trực tiếp với 8 phép đối xứng $D_4$, hỗ trợ lưu/tải buffer ra đĩa.
+- [x] `selfplay/worker.py`: Vòng lặp tự chơi sinh ván đấu `play_selfplay_game`:
+  - Khám phá mở màn với nhiệt độ $\tau = 1.0$ cho 12 nước đầu, sau đó chuyển sang $\tau \to 0$ khai thác tối ưu.
+  - Cơ chế Resign threshold ($-0.9$) sau 10 nước đi, kết hợp tỉ lệ $10\%$ ván không cho resign để chống false-positive.
+  - Gán nhãn $z \in \{+1.0, -1.0\}$ từ góc nhìn của từng người chơi tại thời điểm $s$.
+  - Hàm `generate_selfplay_games` hỗ trợ sinh hàng loạt ván đấu.
+- [x] `tests/test_selfplay/`: Bộ 5 bài test kiểm thử sức chứa buffer, lấy mẫu batch tensor, serialization lưu/tải file và kiểm thử quy trình chơi trọn vẹn một ván cờ tự đấu có xử lý xin thua (resignation).
 
 ### Phase 5: Training Pipeline (`train/`)
 - [ ] `train/trainer.py`: Vòng lặp huấn luyện, Loss function $(z-v)^2 - \pi^T \log p + c \|\theta\|^2$, Optimizer (SGD Momentum/Adam), LR scheduler, checkpointing.

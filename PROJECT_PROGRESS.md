@@ -61,10 +61,17 @@
   - Vòng lặp `train_iteration` huấn luyện $K$ batch từ ReplayBuffer kèm D4 Augmentation.
 - [x] `tests/test_train/`: Bộ 4 bài test kiểm thử single step loss metrics, kiểm chứng gradient descent hội tụ giảm loss trên fixed batch, kiểm thử train iteration trên buffer và kiểm tra tính toàn vẹn khi lưu/tải checkpoint.
 
-### Phase 6: Arena & Elo Rating (`arena/`)
-- [ ] `arena/match.py`: Đấu đối kháng giữa $\theta_{\text{new}}$ và $\theta_{\text{best}}$ (luân phiên Đen/Trắng, deterministic $\tau \to 0$).
-- [ ] `arena/elo.py`: Tính tỷ lệ thắng (ngưỡng 55%) và ước tính cập nhật điểm Elo.
-- [ ] `tests/test_arena/`: Test trận đấu giữa 2 agent đơn giản.
+### Phase 6: Arena & Elo Rating (`arena/`) [HOÀN THÀNH - 8/8 Tests Passed]
+- [x] `arena/elo.py`: Hệ thống tính điểm và xếp hạng Elo chuẩn:
+  - Công thức xác suất kỳ vọng chuẩn $E_A = 1 / (1 + 10^{(R_B - R_A)/400})$.
+  - Cập nhật điểm $R'_A = R_A + K(S_A - E_A)$ bảo toàn tổng điểm đối kháng.
+  - Ước lượng độ chênh lệch Elo dựa trên tỷ lệ thắng đối đầu $\Delta R = 400 \log_{10}(W / (1 - W))$ kèm kẹp biên số học an toàn chống chia cho 0.
+  - Lớp `EloTracker` lưu trữ lịch sử đối đầu, bảng xếp hạng (leaderboard) và serialization JSON bền vững (`save`/`load`).
+- [x] `arena/match.py`: Đấu trường đối kháng chuẩn quy cách:
+  - Hàm `play_arena_game`: thi đấu 1 ván trực tiếp giữa 2 model với MCTS deterministic ($\tau = 0$, không noise), tái sử dụng cây con (`advance_root`), hỗ trợ ngưỡng xin thua (resignation threshold).
+  - Lớp `Arena`: điều phối giải đấu $N$ ván luân phiên màu quân (vòng chẵn candidate cầm Đen, vòng lẻ cầm Trắng), tính tỷ lệ thắng và quyết định phê duyệt mô hình mới (ngưỡng $\ge 55\%$).
+  - Cấu trúc kết quả `ArenaResult` cung cấp thống kê chi tiết (thắng khi cầm Đen/Trắng, hòa, tỷ lệ thắng, trạng thái duyệt).
+- [x] `tests/test_arena/`: Bộ 8 bài test kiểm thử công thức Elo, bảo toàn tổng điểm, ước lượng chênh lệch, lưu/tải tracker, đấu cờ 2 model, luân phiên màu quân và tính xác định (deterministic replay).
 
 ### Phase 7: GTP Server & Tích hợp GUI (`gtp/`)
 - [ ] `gtp/gtp_server.py`: Cài đặt chuẩn Go Text Protocol (GTP v2) để kết nối Sabaki, Lizzie, Katrain, hoặc GNU Go.

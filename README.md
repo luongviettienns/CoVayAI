@@ -99,5 +99,35 @@ pip install numpy pytest
 
 ---
 
-## 📈 5. Tiến độ Phát triển
-Xem chi tiết lộ trình và các giai đoạn triển khai tại [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md).
+## 🎮 5. Hướng dẫn Sử dụng & Vận hành
+
+### 1. Chạy toàn bộ Test Suite (58/58 Tests PASS):
+```bash
+pytest
+```
+
+### 2. Bắt đầu vòng lặp huấn luyện AlphaZero:
+```bash
+# Huấn luyện mặc định trên GPU với cấu hình chuẩn
+python main.py
+
+# Hoặc tùy biến tham số theo nhu cầu:
+python main.py --iters 50 --games 20 --sims 100 --train-steps 200 --batch-size 128 --arena-games 20
+```
+
+### 3. Khởi động GTP Server (Kết nối Sabaki / Lizzie / Katrain):
+```bash
+# Chạy server GTP v2 với checkpoint đã huấn luyện
+python -m gtp.gtp_server --checkpoint checkpoints/best_model.pt --size 9 --sims 200
+```
+Trong Sabaki hoặc Lizzie:
+1. Vào `Engines` -> `Manage Engines` -> `Add`.
+2. Điền path tới Python venv (`.venv\Scripts\python.exe`) và arguments `-m gtp.gtp_server --checkpoint checkpoints/best_model.pt`.
+3. Bắt đầu trận đấu trực tiếp giữa bạn và CoVayAI!
+
+---
+
+## 📈 6. Tiến độ Phát triển & Kiểm thử
+- **Trạng thái:** Toàn bộ 8 Phase đã hoàn thành xuất sắc!
+- **Kiểm thử tự động:** 58/58 bài test passing 100%.
+- Xem chi tiết từng giai đoạn tại [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md).

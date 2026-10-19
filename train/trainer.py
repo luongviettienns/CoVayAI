@@ -104,7 +104,7 @@ class Trainer:
             "value_loss": value_loss_accum / steps,
         }
 
-    def save_checkpoint(self, filepath: str, iteration: int = 0) -> None:
+    def save_checkpoint(self, filepath: str, iteration: int = 0, extra: Optional[dict] = None) -> None:
         """Save model and optimizer state to file."""
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
         checkpoint = {
@@ -112,6 +112,8 @@ class Trainer:
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
         }
+        if extra:
+            checkpoint.update(extra)
         torch.save(checkpoint, filepath)
 
     def load_checkpoint(self, filepath: str) -> int:

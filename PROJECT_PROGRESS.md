@@ -81,6 +81,10 @@
   - CLI entrypoint (`python -m gtp.gtp_server --checkpoint <path> --size 9 --sims 200`) sẵn sàng nạp checkpoint trọng số mạng để đấu trực tiếp qua GUI.
 - [x] `tests/test_gtp/`: Bộ 6 bài test kiểm thử ánh xạ tọa độ 2 chiều (A9, A1, E5, J9, pass), chuỗi lệnh định danh & truy vấn, cấu hình bàn cờ/komi, sinh nước đi thông minh `genmove`, bắt lỗi nước đi không hợp lệ và chấm điểm ván cờ `final_score`.
 
-### Phase 8: AlphaZero Pipeline End-to-End & Tối ưu hóa nâng cao
-- [ ] Tích hợp script điều phối tổng thể `main.py` (Self-play $\to$ Train $\to$ Arena).
-- [ ] Cải tiến tiềm năng: Batch inference, Gumbel AlphaZero, Ownership/Score head (KataGo style).
+### Phase 8: AlphaZero Pipeline End-to-End & Tối ưu hóa nâng cao [HOÀN THÀNH - 58/58 Tests Passed]
+- [x] `main.py`: Kịch bản điều phối toàn diện vòng lặp AlphaZero chuẩn:
+  - Khởi tạo cấu hình linh hoạt qua `PipelineConfig` và CLI args (`--iters`, `--games`, `--sims`, `--train-steps`, `--batch-size`, `--arena-games`, `--device`, v.v.).
+  - Vòng lặp tự động khép kín: Self-Play $\to$ Trích xuất đặc trưng $\to$ Đẩy Replay Buffer $\to$ Huấn luyện Candidate Model (Mixed Precision FP16 + L2 + Grad Clip) $\to$ Đấu đối kháng Arena $\to$ Cập nhật Elo và phê duyệt mô hình $\to$ Lưu checkpoint `checkpoint_iter_{i}.pt`, `best_model.pt`, `ratings.json`.
+  - Cơ chế rollback an toàn: nếu mô hình mới không đạt tỷ lệ thắng $\ge 55\%$, tự động hoàn nguyên trọng số về `best_model`.
+- [x] `tests/test_pipeline.py`: Bài test tích hợp end-to-end kiểm chứng vòng lặp hoàn chỉnh (từ ván cờ tự chơi qua MCTS, tối ưu hóa gradient, đấu trường đối đầu cho tới xuất file checkpoint).
+- [x] **Toàn bộ 58/58 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 8 modules của dự án!

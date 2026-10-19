@@ -32,10 +32,16 @@
 - [x] `nn/model.py`: Mạng Residual Dual-Head $f_\theta(s) = (p, v)$ chuẩn AlphaZero (~1M parameters), hỗ trợ GPU RTX 3050 CUDA 12.7, fast inference `predict()` với illegal moves masking.
 - [x] `tests/test_nn/`: Bộ 8 bài test kiểm thử tensor shapes, bounds, gradient backprop, masking xác suất, đối xứng $D_4$ và thực thi CUDA trên phần cứng thật.
 
-### Phase 3: Monte Carlo Tree Search (`mcts/`)
-- [ ] `mcts/node.py`: Cấu trúc nút MCTS ($N, W, Q, P$, liên kết cha-con).
-- [ ] `mcts/search.py`: Thuật toán PUCT (Select, Expand & Masking, Backup đảo dấu, Dirichlet noise tại Root, Temperature $\tau$, Subtree reuse).
-- [ ] `tests/test_mcts/`: Test tìm kiếm MCTS với mock model, xác minh hội tụ nước đi tối ưu cơ bản.
+### Phase 3: Monte Carlo Tree Search (`mcts/`) [HOÀN THÀNH - 8/8 Tests Passed]
+- [x] `mcts/node.py`: Cấu trúc Node lưu trữ $N(s,a), W(s,a), Q(s,a), P(s,a)$, công thức điểm PUCT UCB, quan hệ cha-con.
+- [x] `mcts/search.py`: Thuật toán MCTS hoàn chỉnh:
+  - Chọn nhánh (Select) theo công thức PUCT.
+  - Mở rộng (Expand) và đánh giá bằng mạng nơ-ron hoặc kiểm tra kết thúc bằng Area Scoring.
+  - Lan truyền ngược (Backup) đảo dấu $v \gets -v$ theo tính chất zero-sum hai người chơi luân phiên.
+  - Bổ sung Dirichlet Noise tại root ($\alpha = 0.25, \varepsilon = 0.25$) cho các nước đi hợp lệ.
+  - Quản lý nhiệt độ Temperature $\tau$ ($\tau \to 0$ cho nước đi tối ưu greedy, $\tau = 1$ cho khám phá).
+  - Tái sử dụng cây con (Subtree reuse qua `advance_root`).
+- [x] `tests/test_mcts/`: Bộ kiểm thử toàn diện gồm 8 bài test (cấu trúc node, PUCT formula, visit counts sum invariant, temperature, Dirichlet noise, subtree reuse, và test tích hợp trực tiếp với AlphaZeroNet trên GPU).
 
 ### Phase 4: Self-Play & Replay Buffer (`selfplay/`)
 - [ ] `selfplay/replay_buffer.py`: Bộ nhớ đệm trượt (100k-500k mẫu), Data Augmentation với 8 phép đối xứng nhóm $D_4$ (xoay + lật).

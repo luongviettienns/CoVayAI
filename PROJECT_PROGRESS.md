@@ -20,11 +20,11 @@
 - [x] Xác nhận môi trường phần cứng: GPU NVIDIA RTX 3050 (4GB VRAM, CUDA 12.7), Python 3.13.15, PyTorch 2.6.0+cu124.
 - [x] Khởi tạo kho Git cục bộ và đẩy mã nguồn ban đầu lên GitHub: `https://github.com/luongviettienns/CoVayAI.git` (nhánh `main`).
 
-### Phase 1: Go Engine Core (`go/`)
-- [ ] `go/zobrist.py`: Mã hóa Zobrist hash cho bàn cờ $N \times N$, phát hiện Positional Superko.
-- [ ] `go/board.py`: Cấu trúc dữ liệu bàn cờ, chuỗi quân (strings/chains), khí (liberties), bắt quân (capture), cấm tự sát, lịch sử nước đi.
-- [ ] `go/scoring.py`: Thuật toán tính điểm diện tích (Area scoring - Tromp-Taylor / Chinese rules), komi, xác định thắng/thua $z \in \{+1, -1\}$.
-- [ ] `tests/test_go/`: Bộ unit test đầy đủ cho các tình huống cờ phức tạp (bắt quân, ko, superko, mắt cờ, tự sát).
+### Phase 1: Go Engine Core (`go/`) [HOÀN THÀNH - 18/18 Tests Passed]
+- [x] `go/zobrist.py`: Mã hóa Zobrist hash 64-bit cho bàn cờ $N \times N$, hỗ trợ tính toán gia tăng (XOR incremental update) và phát hiện Positional Superko.
+- [x] `go/board.py`: Cấu trúc dữ liệu bàn cờ, chuỗi quân liên thông (chains/strings), khí (liberties), bắt quân (capture), cấm tự sát, Positional Superko, clone/copy cho MCTS.
+- [x] `go/scoring.py`: Thuật toán tính điểm diện tích (Area scoring - Tromp-Taylor rules), komi 7.5, xác định thắng/thua $z \in \{+1, -1\}$.
+- [x] `tests/test_go/`: Bộ kiểm thử toàn diện gồm 18 bài test (Zobrist determinism/uniqueness/incremental, bắt đơn/đa quân, cấm tự sát & ngoại lệ bắt quân, superko, seki, occupied point rejection, v.v.).
 
 ### Phase 2: Neural Network Architecture (`nn/`)
 - [ ] `nn/features.py`: Trích xuất không gian đặc trưng đa kênh $N \times N \times C$ (16 plane lịch sử + 1 plane lượt đi), chuẩn hóa perspective (canonical form).

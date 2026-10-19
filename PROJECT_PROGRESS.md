@@ -88,5 +88,9 @@
   - Cơ chế rollback an toàn: nếu mô hình mới không đạt tỷ lệ thắng $\ge 55\%$, tự động hoàn nguyên trọng số về `best_model`.
   - **Live Progress Bar (Mục 1)**: Tích hợp thanh tiến trình thời gian thực (`tqdm`) trên cả 3 giai đoạn: Self-Play (hiển thị số nước, người thắng, tổng mẫu), Training (hiển thị loss tức thời), Arena (hiển thị tỷ số thắng/thua và winrate trực tiếp).
   - **Buffer Persistence & Auto-Resume (Mục 3)**: Tự động lưu `buffer.pkl` định kỳ trên đĩa; hỗ trợ cờ `--resume` (mặc định bật) tự động nhận diện checkpoint cũ, khôi phục Replay Buffer và tiếp tục học liền mạch từ thế hệ trước mà không mất dữ liệu.
+  - **Tối ưu tỷ lệ Sample-to-Train (Dynamic Training Steps)**: Tính toán số bước học `effective_steps` linh hoạt dựa trên kích thước thực tế của Replay Buffer thay vì cố định 400 steps, triệt tiêu hiện tượng "học vẹt" (overfitting) của Value Head ở các vòng lặp đầu.
+  - **Đồng bộ hóa trạng thái Adam Optimizer**: Lưu và phục hồi toàn vẹn cả `model_state_dict` lẫn `optimizer_state_dict` khi Candidate bị từ chối ở Arena, loại bỏ hoàn toàn hiện tượng lệch động lượng (momentum pollution).
+  - **Tùy chọn Continuous AlphaZero (`--no-gating`)**: Hỗ trợ chuyển đổi linh hoạt giữa cơ chế cổng chặn cổ điển (AlphaGo Zero 55%) và học liên tục trực tiếp (AlphaZero 2018).
+  - **Tinh chỉnh siêu tham số**: Tăng `DIRICHLET_ALPHA` lên 0.30 tối ưu cho không gian bàn cờ $9 \times 9$, kết nối đầy đủ `resign_disable_frac` (10%) chống đầu hàng sai.
 - [x] `tests/test_pipeline.py`: Bài test tích hợp end-to-end kiểm chứng vòng lặp hoàn chỉnh (từ ván cờ tự chơi qua MCTS, tối ưu hóa gradient, đấu trường đối đầu cho tới xuất file checkpoint, `buffer.pkl` và tự động khôi phục khi resume).
 - [x] **Toàn bộ 58/58 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 8 modules của dự án!

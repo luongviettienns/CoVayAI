@@ -16,7 +16,7 @@ USE_AMP: bool = True       # fp16 mixed precision
 # --- MCTS (self-play) ---
 NUM_SIMS: int = 200
 C_PUCT: float = 1.5
-DIRICHLET_ALPHA: float = 0.25
+DIRICHLET_ALPHA: float = 0.30
 DIRICHLET_EPS: float = 0.25
 TEMP_MOVES: int = 12       # 12 nước đầu: tau = 1, sau đó tau -> 0
 RESIGN_THRESHOLD: float = -0.9

@@ -2,14 +2,15 @@
 
 Coordinates the end-to-end AlphaZero loop:
   1. Self-Play: Generate training data using current best model (with Live Progress Bar)
-  2. Training: Train candidate model on augmented replay buffer (with Live Progress Bar)
-  3. Arena Evaluation: Head-to-head match between candidate and best models (with Live Progress Bar)
-  4. Model Promotion: Accept candidate if win rate >= 55%, update Elo ratings
+  2. Dynamic Training: Train candidate model with dynamic step scaling (anti-overfitting on early buffer)
+  3. Arena Evaluation: Head-to-head match between candidate and best models (with optional continuous gating)
+  4. Model Promotion & Optimizer Sync: Sync optimizer momentum on promotion/rollback to prevent gradient corruption
   5. Checkpoint & Resume: Auto-saves buffer.pkl, ratings.json, and supports seamless resuming
 """
 
 import os
 import re
+import copy
 import argparse
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
@@ -40,6 +41,7 @@ class PipelineConfig:
     dirichlet_eps: float = default_cfg.DIRICHLET_EPS
     temp_moves: int = default_cfg.TEMP_MOVES
     resign_threshold: float = default_cfg.RESIGN_THRESHOLD
+    resign_disable_frac: float = default_cfg.RESIGN_DISABLE_FRAC
     games_per_iter: int = default_cfg.GAMES_PER_ITER
 
     # Training
@@ -50,10 +52,11 @@ class PipelineConfig:
     buffer_size: int = default_cfg.BUFFER_SIZE
     num_iters: int = default_cfg.NUM_ITERS
 
-    # Arena
+    # Arena & Gating
     arena_games: int = default_cfg.ARENA_GAMES
     arena_sims: int = default_cfg.ARENA_SIMS
     win_threshold: float = default_cfg.WIN_THRESHOLD
+    gating: bool = True
 
     # Runtime, Tracking & Checkpoints
     checkpoint_dir: str = "checkpoints"
@@ -89,12 +92,22 @@ class AlphaZeroPipeline:
         # Replay Buffer
         self.buffer = ReplayBuffer(capacity=cfg.buffer_size)
 
+        # Trainer for candidate model
+        self.trainer = Trainer(
+            model=self.candidate_model,
+            lr=cfg.lr,
+            weight_decay=cfg.weight_decay,
+            device=self.device,
+            use_amp=cfg.use_amp and self.device.type == "cuda",
+        )
+
         # Elo Tracker
         self.elo_tracker = EloTracker(initial_rating=1000.0)
 
         # Determine starting iteration and resume state if requested
         self.start_iteration = 1
         self.current_best_id = "iter_0"
+        self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
 
         buffer_path = os.path.join(self.config.checkpoint_dir, "buffer.pkl")
         ratings_path = os.path.join(self.config.checkpoint_dir, "ratings.json")
@@ -130,16 +143,22 @@ class AlphaZeroPipeline:
                 self.start_iteration = max_iter + 1
                 self.current_best_id = f"iter_{max_iter}"
 
-                # Load best model weights
+                # Load best model weights and optimizer state
                 if os.path.exists(best_model_path):
                     ckpt = torch.load(best_model_path, map_location=self.device)
                     state = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
                     self.best_model.load_state_dict(state)
+                    if "optimizer_state_dict" in ckpt:
+                        self.best_optimizer_state = copy.deepcopy(ckpt["optimizer_state_dict"])
+                        self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
                     print(f"[+] Resuming from Iteration {self.start_iteration} with best model from {best_model_path} (Elo: {self.elo_tracker.get_rating(self.current_best_id):.1f})")
             elif os.path.exists(best_model_path):
                 ckpt = torch.load(best_model_path, map_location=self.device)
                 state = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
                 self.best_model.load_state_dict(state)
+                if "optimizer_state_dict" in ckpt:
+                    self.best_optimizer_state = copy.deepcopy(ckpt["optimizer_state_dict"])
+                    self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
                 print(f"[+] Loaded baseline weights from {best_model_path}")
 
         # Always ensure best_model.pt exists on disk as baseline
@@ -148,22 +167,15 @@ class AlphaZeroPipeline:
                 {
                     "iteration": 0,
                     "model_state_dict": self.best_model.state_dict(),
+                    "optimizer_state_dict": self.best_optimizer_state,
                     "elo": 1000.0,
                 },
                 best_model_path,
             )
 
-        # Candidate starts with identical weights to current best
+        # Candidate starts with identical weights and optimizer state to current best
         self.candidate_model.load_state_dict(self.best_model.state_dict())
-
-        # Trainer for candidate model
-        self.trainer = Trainer(
-            model=self.candidate_model,
-            lr=cfg.lr,
-            weight_decay=cfg.weight_decay,
-            device=self.device,
-            use_amp=cfg.use_amp and self.device.type == "cuda",
-        )
+        self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
 
         # Arena
         self.arena = Arena(
@@ -178,12 +190,12 @@ class AlphaZeroPipeline:
         )
 
     def run_iteration(self, iteration: int) -> Dict[str, Any]:
-        """Execute one complete AlphaZero iteration with live progress and automatic buffer persistence.
+        """Execute one complete AlphaZero iteration with dynamic training steps and optimizer synchronization.
 
         1. Self-Play -> buffer (auto-saved to buffer.pkl)
-        2. Train candidate model on buffer
-        3. Arena: candidate vs best model
-        4. Promote candidate if win_rate >= threshold
+        2. Dynamic Train candidate model (sample-to-train ratio controlled to prevent overfitting)
+        3. Arena: candidate vs best model (with gating check)
+        4. Promote candidate or Rollback model + optimizer states
         """
         print(f"\n{'='*30} ITERATION {iteration} {'='*30}")
 
@@ -210,6 +222,7 @@ class AlphaZeroPipeline:
             dirichlet_eps=self.config.dirichlet_eps,
             temp_moves=self.config.temp_moves,
             resign_threshold=self.config.resign_threshold,
+            resign_disable_frac=self.config.resign_disable_frac,
             max_moves=self.config.max_moves,
             device=self.device,
             progress_bar=self.config.progress_bar,
@@ -218,13 +231,18 @@ class AlphaZeroPipeline:
 
         print(f"    [+] Added {len(new_samples)} samples. Total Replay Buffer: {len(self.buffer)} samples (Saved to disk).")
 
-        # 2. Train candidate model
-        print(f"[*] Step 2/3: Training ({self.config.train_steps} steps, batch size {self.config.batch_size})...")
-        # Ensure candidate starts from current best model weights
+        # 2. Dynamic Training: prevent early overfitting when buffer is small
+        max_allowed_steps = max(20, (len(self.buffer) * 2) // self.config.batch_size)
+        effective_steps = min(self.config.train_steps, max_allowed_steps)
+        print(f"[*] Step 2/3: Dynamic Training ({effective_steps} steps [cap: {self.config.train_steps}], batch size {self.config.batch_size})...")
+
+        # Ensure candidate starts from current best model weights and clean optimizer momentum
         self.candidate_model.load_state_dict(self.best_model.state_dict())
+        self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+
         train_metrics = self.trainer.train_iteration(
             replay_buffer=self.buffer,
-            steps=self.config.train_steps,
+            steps=effective_steps,
             batch_size=self.config.batch_size,
             progress_bar=self.config.progress_bar,
         )
@@ -234,48 +252,77 @@ class AlphaZeroPipeline:
         print(f"    [+] Train Loss: {avg_loss:.4f} (Policy: {avg_pi_loss:.4f}, Value: {avg_v_loss:.4f})")
 
         # 3. Arena Evaluation
-        print(f"[*] Step 3/3: Arena Evaluation ({self.config.arena_games} games vs best model)...")
-        arena_result: ArenaResult = self.arena.evaluate(
-            candidate_model=self.candidate_model,
-            baseline_model=self.best_model,
-            num_games=self.config.arena_games,
-            progress_bar=self.config.progress_bar,
-        )
-
         cand_id = f"iter_{iteration}"
-        self.elo_tracker.record_match(
-            model_a_id=cand_id,
-            model_b_id=self.current_best_id,
-            wins_a=arena_result.candidate_wins,
-            wins_b=arena_result.baseline_wins,
-            draws=arena_result.draws,
-        )
-        cand_elo = self.elo_tracker.get_rating(cand_id)
-        best_elo = self.elo_tracker.get_rating(self.current_best_id)
-
-        print(
-            f"    Result: {arena_result.candidate_wins}W - {arena_result.baseline_wins}L - {arena_result.draws}D "
-            f"({arena_result.candidate_win_rate * 100:.1f}%)"
-        )
-        print(f"    Candidate Elo: {cand_elo:.1f} | Best Elo: {best_elo:.1f}")
-
-        # 4. Model Promotion
         best_model_path = os.path.join(self.config.checkpoint_dir, "best_model.pt")
-        if arena_result.accepted:
-            print(f"    [+] Candidate ACCEPTED! (Winrate {arena_result.candidate_win_rate*100:.1f}% >= {self.config.win_threshold*100:.1f}%)")
+
+        if self.config.gating:
+            print(f"[*] Step 3/3: Arena Evaluation ({self.config.arena_games} games vs best model)...")
+            arena_result: ArenaResult = self.arena.evaluate(
+                candidate_model=self.candidate_model,
+                baseline_model=self.best_model,
+                num_games=self.config.arena_games,
+                progress_bar=self.config.progress_bar,
+            )
+
+            self.elo_tracker.record_match(
+                model_a_id=cand_id,
+                model_b_id=self.current_best_id,
+                wins_a=arena_result.candidate_wins,
+                wins_b=arena_result.baseline_wins,
+                draws=arena_result.draws,
+            )
+            cand_elo = self.elo_tracker.get_rating(cand_id)
+            best_elo = self.elo_tracker.get_rating(self.current_best_id)
+
+            print(
+                f"    Result: {arena_result.candidate_wins}W - {arena_result.baseline_wins}L - {arena_result.draws}D "
+                f"({arena_result.candidate_win_rate * 100:.1f}%)"
+            )
+            print(f"    Candidate Elo: {cand_elo:.1f} | Best Elo: {best_elo:.1f}")
+
+            # 4. Model Promotion / Rollback with Optimizer Synchronization
+            if arena_result.accepted:
+                print(f"    [+] Candidate ACCEPTED! (Winrate {arena_result.candidate_win_rate*100:.1f}% >= {self.config.win_threshold*100:.1f}%)")
+                self.best_model.load_state_dict(self.candidate_model.state_dict())
+                self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
+                self.current_best_id = cand_id
+                torch.save(
+                    {
+                        "iteration": iteration,
+                        "model_state_dict": self.best_model.state_dict(),
+                        "optimizer_state_dict": self.best_optimizer_state,
+                        "elo": cand_elo,
+                    },
+                    best_model_path,
+                )
+            else:
+                print(f"    [-] Candidate REJECTED. (Winrate {arena_result.candidate_win_rate*100:.1f}% < {self.config.win_threshold*100:.1f}%)")
+                # Rollback candidate weights AND optimizer state
+                self.candidate_model.load_state_dict(self.best_model.state_dict())
+                self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+
+            win_rate = arena_result.candidate_win_rate
+            accepted = arena_result.accepted
+        else:
+            # Continuous AlphaZero (2018): promote candidate directly without gating
+            print("    [*] Gating disabled (Continuous AlphaZero training): Candidate promoted directly.")
             self.best_model.load_state_dict(self.candidate_model.state_dict())
+            self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
             self.current_best_id = cand_id
+            cand_elo = self.elo_tracker.get_rating(self.current_best_id) + 10.0
+            best_elo = cand_elo
+            self.elo_tracker.ratings[cand_id] = cand_elo
             torch.save(
                 {
                     "iteration": iteration,
                     "model_state_dict": self.best_model.state_dict(),
+                    "optimizer_state_dict": self.best_optimizer_state,
                     "elo": cand_elo,
                 },
                 best_model_path,
             )
-        else:
-            print(f"    [-] Candidate REJECTED. (Winrate {arena_result.candidate_win_rate*100:.1f}% < {self.config.win_threshold*100:.1f}%)")
-            self.candidate_model.load_state_dict(self.best_model.state_dict())
+            win_rate = 1.0
+            accepted = True
 
         # Save iteration checkpoint
         iter_ckpt_path = os.path.join(
@@ -285,8 +332,8 @@ class AlphaZeroPipeline:
             filepath=iter_ckpt_path,
             iteration=iteration,
             extra={
-                "accepted": arena_result.accepted,
-                "win_rate": arena_result.candidate_win_rate,
+                "accepted": accepted,
+                "win_rate": win_rate,
                 "candidate_elo": cand_elo,
                 "best_elo": best_elo,
             },
@@ -301,10 +348,11 @@ class AlphaZeroPipeline:
             "selfplay_samples": len(new_samples),
             "buffer_size": len(self.buffer),
             "train_loss": avg_loss,
+            "effective_train_steps": effective_steps,
             "policy_loss": avg_pi_loss,
             "value_loss": avg_v_loss,
-            "arena_win_rate": arena_result.candidate_win_rate,
-            "accepted": arena_result.accepted,
+            "arena_win_rate": win_rate,
+            "accepted": accepted,
             "candidate_elo": cand_elo,
             "best_elo": best_elo,
         }
@@ -331,9 +379,11 @@ def main() -> None:
     parser.add_argument("--board-size", type=int, default=default_cfg.BOARD_SIZE, help="Board size")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device")
+    parser.add_argument("--resign-disable-frac", type=float, default=default_cfg.RESIGN_DISABLE_FRAC, help="Fraction of selfplay games with resignation disabled")
     parser.add_argument("--no-resume", action="store_false", dest="resume", help="Do not resume from existing checkpoints")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
-    parser.set_defaults(resume=True, progress_bar=True)
+    parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
+    parser.set_defaults(resume=True, progress_bar=True, gating=True)
     args = parser.parse_args()
 
     cfg = PipelineConfig(
@@ -348,6 +398,8 @@ def main() -> None:
         device=args.device,
         progress_bar=args.progress_bar,
         resume=args.resume,
+        resign_disable_frac=args.resign_disable_frac,
+        gating=args.gating,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

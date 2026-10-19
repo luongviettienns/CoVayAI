@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "ml-engineer": {
+      "source": "ar27111994/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/ml-engineer/SKILL.md",
+      "computedHash": "d11074401db078c2e5199daf6ac4ba7de74b957615a31d4709f7b9a24d4aa696"
+    },
+    "performance-profiling": {
+      "source": "ar27111994/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/performance-profiling/SKILL.md",
+      "computedHash": "3fc0f5cef71f7d495113a26d4032d301eee8a1ccafdb8114f69b4f110d5844bf"
+    },
+    "python-patterns": {
+      "source": "ar27111994/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-patterns/SKILL.md",
+      "computedHash": "742ad7bf271d14414d1d37b28d7012380d71db1b6f611e86076b923a8f166909"
+    },
+    "python-performance-optimization": {
+      "source": "ar27111994/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-performance-optimization/SKILL.md",
+      "computedHash": "8a7524a772635862626948436c62060a22e61e2274c0d57a4f2c9d320d5ac130"
+    },
+    "python-pro": {
+      "source": "ar27111994/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-pro/SKILL.md",
+      "computedHash": "f6a13595ce45e85d6b7a226c2584ca81a2076940f2ce8cdb2cd1947ae3dcbcba"
+    },
+    "python-testing-patterns": {
+      "source": "ar27111994/antigravity-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/python-testing-patterns/SKILL.md",
+      "computedHash": "e5811b150c4e47bda3daaf2113e1e4fc38555bbacb7543f4208814ee719ed9f9"
+    }
+  }
+}

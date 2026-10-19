@@ -52,9 +52,14 @@
   - Hàm `generate_selfplay_games` hỗ trợ sinh hàng loạt ván đấu.
 - [x] `tests/test_selfplay/`: Bộ 5 bài test kiểm thử sức chứa buffer, lấy mẫu batch tensor, serialization lưu/tải file và kiểm thử quy trình chơi trọn vẹn một ván cờ tự đấu có xử lý xin thua (resignation).
 
-### Phase 5: Training Pipeline (`train/`)
-- [ ] `train/trainer.py`: Vòng lặp huấn luyện, Loss function $(z-v)^2 - \pi^T \log p + c \|\theta\|^2$, Optimizer (SGD Momentum/Adam), LR scheduler, checkpointing.
-- [ ] `tests/test_train/`: Test 1 step train trên dummy batch để xác nhận loss giảm và không nổ gradient.
+### Phase 5: Training Pipeline (`train/`) [HOÀN THÀNH - 4/4 Tests Passed]
+- [x] `train/trainer.py`: Lớp Trainer quản lý toàn bộ quy trình tối ưu hóa:
+  - Hàm mất mát kết hợp chuẩn AlphaZero: $L = (z - v)^2 - \pi^T \log p + c \|\theta\|^2$ (MSE cho Value head + Cross-Entropy cho Policy head + L2 weight decay).
+  - Tích hợp kỹ thuật tăng tốc Mixed Precision FP16 (`torch.amp.autocast` và `GradScaler`) trên GPU RTX 3050.
+  - Gradient Clipping (`clip_grad_norm_`) chống nổ gradient trong quá trình huấn luyện sâu.
+  - Quản lý checkpointing (`save_checkpoint`, `load_checkpoint`) lưu/nạp trọng số mạng và optimizer state.
+  - Vòng lặp `train_iteration` huấn luyện $K$ batch từ ReplayBuffer kèm D4 Augmentation.
+- [x] `tests/test_train/`: Bộ 4 bài test kiểm thử single step loss metrics, kiểm chứng gradient descent hội tụ giảm loss trên fixed batch, kiểm thử train iteration trên buffer và kiểm tra tính toàn vẹn khi lưu/tải checkpoint.
 
 ### Phase 6: Arena & Elo Rating (`arena/`)
 - [ ] `arena/match.py`: Đấu đối kháng giữa $\theta_{\text{new}}$ và $\theta_{\text{best}}$ (luân phiên Đen/Trắng, deterministic $\tau \to 0$).

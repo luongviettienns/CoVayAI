@@ -73,9 +73,13 @@
   - Cấu trúc kết quả `ArenaResult` cung cấp thống kê chi tiết (thắng khi cầm Đen/Trắng, hòa, tỷ lệ thắng, trạng thái duyệt).
 - [x] `tests/test_arena/`: Bộ 8 bài test kiểm thử công thức Elo, bảo toàn tổng điểm, ước lượng chênh lệch, lưu/tải tracker, đấu cờ 2 model, luân phiên màu quân và tính xác định (deterministic replay).
 
-### Phase 7: GTP Server & Tích hợp GUI (`gtp/`)
-- [ ] `gtp/gtp_server.py`: Cài đặt chuẩn Go Text Protocol (GTP v2) để kết nối Sabaki, Lizzie, Katrain, hoặc GNU Go.
-- [ ] `tests/test_gtp/`: Test tương tác GTP qua stdin/stdout.
+### Phase 7: GTP Server & Tích hợp GUI (`gtp/`) [HOÀN THÀNH - 6/6 Tests Passed]
+- [x] `gtp/gtp_server.py`: Cài đặt chuẩn Go Text Protocol (GTP v2) tương thích các GUI cờ vây chuyên nghiệp (Sabaki, Lizzie, Katrain, GNU Go):
+  - Ánh xạ tọa độ chuẩn bàn cờ (A-T bỏ chữ 'I', số hàng từ 1 đến N, xử lý nước đi `pass` và `resign`).
+  - Hỗ trợ đầy đủ bộ lệnh cốt lõi: `protocol_version`, `name`, `version`, `known_command`, `list_commands`, `boardsize`, `clear_board`, `komi`, `play`, `genmove`, `final_score`, `showboard`, `quit`.
+  - Quản lý Command ID (`={id} <response>\n\n`, `?{id} <error>\n\n`), lọc comment ký tự `#`.
+  - CLI entrypoint (`python -m gtp.gtp_server --checkpoint <path> --size 9 --sims 200`) sẵn sàng nạp checkpoint trọng số mạng để đấu trực tiếp qua GUI.
+- [x] `tests/test_gtp/`: Bộ 6 bài test kiểm thử ánh xạ tọa độ 2 chiều (A9, A1, E5, J9, pass), chuỗi lệnh định danh & truy vấn, cấu hình bàn cờ/komi, sinh nước đi thông minh `genmove`, bắt lỗi nước đi không hợp lệ và chấm điểm ván cờ `final_score`.
 
 ### Phase 8: AlphaZero Pipeline End-to-End & Tối ưu hóa nâng cao
 - [ ] Tích hợp script điều phối tổng thể `main.py` (Self-play $\to$ Train $\to$ Arena).

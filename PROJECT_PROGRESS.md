@@ -224,6 +224,20 @@
   - Bộ kiểm thử tự động đạt mốc kỷ lục: **93/93 Tests PASS** trong $\approx 6.44$s.
   - Toàn bộ pipeline đã sạch bóng lỗi ngầm, tối ưu RAM, lưu trữ nguyên tử và hoàn toàn sẵn sàng cho các đợt huấn luyện dài hạn!
 
+### Phase 16: Chiến Dịch Huấn Luyện Sản Phẩm 9×9 Qua Đêm (`checkpoints/run9_prod`) [ĐANG CHẠY GIAI ĐOẠN 2]
+- [x] **Giai đoạn 1 (Iterations 1 $\rightarrow$ 20) [HOÀN THÀNH XUẤT SẮC]**:
+  - Thời gian chạy: $\approx 2.5$ giờ liên tục trên GPU NVIDIA RTX 3050 CUDA.
+  - Tổng số mẫu thu thập trong Replay Buffer Schema v2: **43,621 mẫu 9×9** sạch, không lỗi.
+  - **Kiểm định thực chiến của mô hình `checkpoint_iter_20.pt`**:
+    - Đối đầu `RandomModel`: Thắng tuyệt đối **$4/4$ ván ($100.0\%$)** cả khi cầm quân Đen lẫn Trắng.
+    - Đối đầu `CaptureHeuristicModel` (AI chiến thuật chuyên săn bắt quân atari): Thắng áp đảo **$4/4$ ván ($100.0\%$)** qua các ván đấu 91 – 152 nước cờ.
+    - Mô hình đã hình thành trực giác bảo vệ quân, kiểm soát vùng biên và ăn quân đối phương.
+  - Thăng cấp `checkpoint_iter_20.pt` thành `best_model.pt` làm hạt giống chuẩn mực cho Giai đoạn 2.
+- [ ] **Giai đoạn 2 (Iterations 21 $\rightarrow$ 70) [ĐANG CHẠY NỀN]**:
+  - Cấu hình: `--sims 64`, `--train-steps 100`, `--batch-size 64`, `--no-gating` (huấn luyện liên tục AlphaZero 2018).
+  - Mục tiêu: Rèn luyện khả năng tạo mắt sống độc lập, tính toán sâu các thế vây bắt và tối ưu hóa điểm số lãnh thổ cuối trận (yose).
+
+
 
 
 

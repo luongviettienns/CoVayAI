@@ -132,3 +132,18 @@
   - Bổ sung tệp giấy phép phần mềm MIT (`LICENSE`).
   - Chuẩn hóa cây thư mục `CoVayAI/` và cập nhật tài liệu `README.md`.
 - [x] **Toàn bộ 65/65 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 9 modules của dự án!
+
+### Phase 10: Chuẩn Hóa Sẵn Sàng Train 9×9 (P0 & P1 - KE_HOACH_SUA_COVAYAI_TRAIN_READY.md) [HOÀN THÀNH - 75/75 Tests Passed]
+- [x] **P0: Đóng băng Baseline & Chuẩn hóa Môi trường**:
+  - Tạo nhánh độc lập `fix/train-readiness` tại commit `5f4898c`.
+  - Ghi nhận thông số phần cứng thực tế: NVIDIA GeForce RTX 3050 Laptop GPU (4.29 GB VRAM, CUDA 12.4), Python 3.13.15, PyTorch 2.6.0+cu124.
+  - Tạo tệp `requirements.txt` và `requirements-dev.txt` cố định phiên bản thư viện.
+  - Xây dựng 5 kịch bản kiểm thử mẫu chuẩn (Golden Fixtures) tại `tests/test_golden_fixtures.py` (Bàn trống, bắt quân atari, cấm tự sát, Positional Superko, kết thúc Area Scoring).
+  - Khởi chạy thành công smoke test 5×5 trên thư mục checkpoint mới `checkpoints/baseline_smoke5`.
+- [x] **P1: Tách rời Tiến độ Scheduler Toàn Cục & Khôi Phục Checkpoint Nguyên Tử**:
+  - Khắc phục lỗi kẹt Learning Rate: Tách tiến trình `MultiStepLR` toàn cục khỏi kết quả Arena. Khi Candidate bị REJECT, chỉ rollback trọng số mô hình và động lượng optimizer, đồng bộ LR tức thời từ `scheduler.get_last_lr()` vào optimizer, bảo đảm `last_epoch` và mốc giảm LR (milestones 30, 60) luôn tịnh tiến chuẩn xác.
+  - Cơ chế ghi tệp nguyên tử (Atomic File Writing): Sử dụng tệp tạm `.tmp` và `os.replace` cho tất cả checkpoint (`checkpoint_iter_*.pt`, `best_model.pt`, `buffer.pkl`, `ratings.json`).
+  - Single Source of Truth (`latest_manifest.json`): Lưu trữ toàn vẹn metadata (iteration, best_model_id, scheduler_state_dict, fingerprint kiến trúc, cấu hình siêu tham số, thời gian) và kiểm tra tính tương thích kiến trúc (`validate_checkpoint_compatibility`) khi resume.
+  - Bảo vệ thư mục lưu trữ (`--no-resume` & `--force-new`): Từ chối chạy đè lên thư mục checkpoint đã có dữ liệu cũ nếu không bật cờ `--force-new`.
+  - Bổ sung và kiểm định chặt chẽ các tham số CLI: `--seed`, `--resign-threshold`, `--max-moves`, `--force-new`.
+- [x] **Toàn bộ 75/75 bài kiểm thử tự động đạt 100% PASS** (bao gồm bộ test hồi quy scheduler `tests/test_train/test_scheduler_checkpoint.py`).

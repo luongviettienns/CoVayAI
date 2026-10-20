@@ -47,6 +47,7 @@ def test_pipeline_single_iteration_and_resume():
         assert os.path.exists(os.path.join(tmpdir, "checkpoint_iter_1.pt"))
         assert os.path.exists(os.path.join(tmpdir, "best_model.pt"))
         assert os.path.exists(os.path.join(tmpdir, "buffer.pkl"))
+        assert os.path.exists(os.path.join(tmpdir, "latest_manifest.json"))
 
         # Test resume functionality: create second pipeline instance pointing to same tmpdir
         resumed_pipeline = AlphaZeroPipeline(config)

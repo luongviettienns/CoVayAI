@@ -2,6 +2,7 @@
 
 import json
 import math
+import os
 from typing import Dict, List, Tuple, Optional
 
 
@@ -123,8 +124,10 @@ class EloTracker:
             "ratings": self.ratings,
             "history": self.history,
         }
-        with open(file_path, "w", encoding="utf-8") as f:
+        tmp_path = file_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp_path, file_path)
 
     @classmethod
     def load(cls, file_path: str) -> "EloTracker":

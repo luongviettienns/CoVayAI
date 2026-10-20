@@ -2,6 +2,7 @@
 
 from typing import List, Tuple, Optional
 from collections import deque
+import os
 import pickle
 import numpy as np
 import torch
@@ -69,9 +70,11 @@ class ReplayBuffer:
         return states_tensor, pis_tensor, zs_tensor
 
     def save(self, filepath: str) -> None:
-        """Serialize buffer to disk."""
-        with open(filepath, "wb") as f:
+        """Serialize buffer to disk atomically."""
+        tmp_path = filepath + ".tmp"
+        with open(tmp_path, "wb") as f:
             pickle.dump(list(self.buffer), f)
+        os.replace(tmp_path, filepath)
 
     def load(self, filepath: str) -> None:
         """Deserialize buffer from disk."""

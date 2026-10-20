@@ -166,7 +166,9 @@ class Trainer:
         }
         if extra:
             checkpoint.update(extra)
-        torch.save(checkpoint, filepath)
+        tmp_path = filepath + ".tmp"
+        torch.save(checkpoint, tmp_path)
+        os.replace(tmp_path, filepath)
 
     def load_checkpoint(self, filepath: str) -> int:
         """Load model, optimizer, and scheduler state from file and return saved iteration."""

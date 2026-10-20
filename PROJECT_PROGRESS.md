@@ -116,6 +116,11 @@
 - [x] **Tối ưu Hóa Huấn luyện & Checkpoint (`train/trainer.py`, `main.py`)**:
   - Chuyển sang `AdamW` (`weight_decay=0.01` cho Conv2D/Linear weights, `0.0` cho Biases và BatchNorm).
   - Tích hợp `MultiStepLR(milestones=[30, 60], gamma=0.1)` và lưu/khôi phục toàn vẹn `scheduler_state_dict` trong checkpoint.
+  - Sử dụng `copy.deepcopy()` cho tất cả các điểm nạp `optimizer.load_state_dict` và `scheduler.load_state_dict` nhằm loại bỏ triệt để hiện tượng in-place mutation của PyTorch Adam tensor làm thay đổi `best_optimizer_state` trong bộ nhớ khi Candidate bị từ chối ở Arena.
+  - Sửa lỗi nạp ID mô hình tốt nhất khi resume: Lấy `iteration` từ `best_model.pt` (`ckpt["iteration"]`) thay vì lấy `max_iter` từ `checkpoints/` (vốn có thể là một iteration bị REJECT ở Arena), đảm bảo bảng xếp hạng Elo luôn chính xác.
+  - Cơ chế tự động tính `komi` (0.5 cho bàn $\le 7\times 7$, 7.5 cho bàn $\ge 9\times 9$) và `max_moves` ($2N^2$) tự thích ứng kích cỡ bàn cờ.
+  - Bổ sung tham số CLI `--arena-sims` tách biệt số mô phỏng đánh giá Arena và số mô phỏng sinh dữ liệu Self-Play `--sims`.
+  - Tối ưu I/O Replay Buffer: Lưu `buffer.pkl` 1 lần duy nhất sau mỗi iteration thay vì định kỳ 5 ván một lần (tránh tiêu tốn hàng chục GB I/O khi buffer đạt 200k mẫu).
 - [x] **Tối Ưu Hiệu Năng Thực Chất (`go/board.py`, `nn/features.py`, `selfplay/replay_buffer.py`)**:
   - `Board.copy()`: Sử dụng `Board.__new__(Board)` bỏ qua `__init__`, chia sẻ `_neighbors` và `zobrist` table.
   - `get_legal_moves()`: Thêm shortcut hàng xóm trống (empty neighbor fast path) và kiểm tra superko bằng hash trước khi chạy BFS.
@@ -123,4 +128,7 @@
 - [x] **Baseline Đối Kháng Khách Quan & Thử Nghiệm Bàn 5x5 (`arena/baseline.py`)**:
   - Xây dựng mô-đun `RandomModel` và hàm `evaluate_against_random`.
   - Chạy thử nghiệm thành công bàn $5\times 5$ (`komi=0.5`) qua 1 iteration hoàn chỉnh và đạt tỷ lệ thắng 100% trước đối thủ Random Player.
+- [x] **Tiêu Chuẩn Mã Nguồn Mở**:
+  - Bổ sung tệp giấy phép phần mềm MIT (`LICENSE`).
+  - Chuẩn hóa cây thư mục `CoVayAI/` và cập nhật tài liệu `README.md`.
 - [x] **Toàn bộ 65/65 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 9 modules của dự án!

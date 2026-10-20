@@ -52,4 +52,5 @@ def test_pipeline_single_iteration_and_resume():
         resumed_pipeline = AlphaZeroPipeline(config)
         assert resumed_pipeline.start_iteration == 2
         assert len(resumed_pipeline.buffer) == metrics["selfplay_samples"]
-        assert resumed_pipeline.current_best_id == "iter_1"
+        expected_best_id = "iter_1" if metrics["accepted"] else "iter_0"
+        assert resumed_pipeline.current_best_id == expected_best_id

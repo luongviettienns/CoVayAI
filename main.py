@@ -4,8 +4,8 @@ Coordinates the end-to-end AlphaZero loop:
   1. Self-Play: Generate training data using current best model (with Live Progress Bar)
   2. Dynamic Training: Train candidate model with dynamic step scaling (anti-overfitting on early buffer)
   3. Arena Evaluation: Head-to-head match between candidate and best models (with opening randomization)
-  4. Model Promotion & Optimizer Sync: Sync optimizer momentum & scheduler on promotion/rollback
-  5. Checkpoint & Resume: Auto-saves buffer.pkl, ratings.json, and supports seamless resuming
+  4. Model Promotion & Optimizer Sync: Sync optimizer momentum & scheduler on promotion/rollback (with deepcopy)
+  5. Checkpoint & Resume: Auto-saves buffer.pkl once per iter, ratings.json, and supports seamless resuming
 """
 
 import os
@@ -25,12 +25,23 @@ from arena.elo import EloTracker
 import config as default_cfg
 
 
+def get_default_komi(board_size: int) -> float:
+    """Return default komi compensation based on board size (0.5 for <=7x7, 7.5 for >=9x9)."""
+    return 0.5 if board_size <= 7 else 7.5
+
+
+def get_default_max_moves(board_size: int) -> int:
+    """Return default maximum moves cap (2 * N^2) to prevent infinite games."""
+    return 2 * board_size * board_size
+
+
 @dataclass
 class PipelineConfig:
     """Hyperparameters and runtime configuration for the AlphaZero pipeline."""
 
     board_size: int = default_cfg.BOARD_SIZE
-    komi: float = default_cfg.KOMI
+    komi: Optional[float] = None
+    max_moves: Optional[int] = None
     num_res_blocks: int = default_cfg.NUM_BLOCKS
     num_filters: int = default_cfg.NUM_FILTERS
     use_amp: bool = default_cfg.USE_AMP
@@ -67,7 +78,6 @@ class PipelineConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     progress_bar: bool = True
     resume: bool = True
-    max_moves: Optional[int] = None
 
 
 class AlphaZeroPipeline:
@@ -76,6 +86,12 @@ class AlphaZeroPipeline:
     def __init__(self, cfg: PipelineConfig):
         self.config = cfg
         self.device = torch.device(cfg.device)
+
+        # Dynamic defaults based on board size
+        if self.config.komi is None:
+            self.config.komi = get_default_komi(self.config.board_size)
+        if self.config.max_moves is None:
+            self.config.max_moves = get_default_max_moves(self.config.board_size)
 
         # Create checkpoint directory if not exists
         os.makedirs(self.config.checkpoint_dir, exist_ok=True)
@@ -149,31 +165,30 @@ class AlphaZeroPipeline:
             if iter_numbers:
                 max_iter = max(iter_numbers)
                 self.start_iteration = max_iter + 1
-                self.current_best_id = f"iter_{max_iter}"
 
                 # Load best model weights and optimizer/scheduler state
                 if os.path.exists(best_model_path):
                     ckpt = torch.load(best_model_path, map_location=self.device)
+                    best_iter = ckpt.get("iteration", 0) if isinstance(ckpt, dict) else 0
+                    self.current_best_id = f"iter_{best_iter}"
                     state = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
                     self.best_model.load_state_dict(state)
                     if "optimizer_state_dict" in ckpt:
                         self.best_optimizer_state = copy.deepcopy(ckpt["optimizer_state_dict"])
-                        self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
                     if "scheduler_state_dict" in ckpt:
                         self.best_scheduler_state = copy.deepcopy(ckpt["scheduler_state_dict"])
-                        self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
-                    print(f"[+] Resuming from Iteration {self.start_iteration} with best model from {best_model_path} (Elo: {self.elo_tracker.get_rating(self.current_best_id):.1f})")
+                    print(f"[+] Resuming from Iteration {self.start_iteration} with best model from {best_model_path} (Model ID: {self.current_best_id}, Elo: {self.elo_tracker.get_rating(self.current_best_id):.1f})")
             elif os.path.exists(best_model_path):
                 ckpt = torch.load(best_model_path, map_location=self.device)
+                best_iter = ckpt.get("iteration", 0) if isinstance(ckpt, dict) else 0
+                self.current_best_id = f"iter_{best_iter}"
                 state = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
                 self.best_model.load_state_dict(state)
                 if "optimizer_state_dict" in ckpt:
                     self.best_optimizer_state = copy.deepcopy(ckpt["optimizer_state_dict"])
-                    self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
                 if "scheduler_state_dict" in ckpt:
                     self.best_scheduler_state = copy.deepcopy(ckpt["scheduler_state_dict"])
-                    self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
-                print(f"[+] Loaded baseline weights from {best_model_path}")
+                print(f"[+] Loaded baseline weights from {best_model_path} (Model ID: {self.current_best_id})")
 
         # Always ensure best_model.pt exists on disk as baseline
         if not os.path.exists(best_model_path):
@@ -181,38 +196,38 @@ class AlphaZeroPipeline:
                 {
                     "iteration": 0,
                     "model_state_dict": self.best_model.state_dict(),
-                    "optimizer_state_dict": self.best_optimizer_state,
-                    "scheduler_state_dict": self.best_scheduler_state,
+                    "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
+                    "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
                     "elo": 1000.0,
                 },
                 best_model_path,
             )
 
-        # Candidate starts with identical weights and optimizer state to current best
+        # Candidate starts with identical weights and deepcopied optimizer/scheduler state
         self.candidate_model.load_state_dict(self.best_model.state_dict())
-        self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
-        self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
+        self.trainer.optimizer.load_state_dict(copy.deepcopy(self.best_optimizer_state))
+        self.trainer.scheduler.load_state_dict(copy.deepcopy(self.best_scheduler_state))
 
         # Arena
         self.arena = Arena(
-            board_size=cfg.board_size,
-            komi=cfg.komi,
-            num_sims=cfg.arena_sims,
-            c_puct=cfg.c_puct,
-            max_moves=cfg.max_moves if cfg.max_moves is not None else default_cfg.MAX_MOVES,
-            win_threshold=cfg.win_threshold,
-            resign_threshold=cfg.resign_threshold,
-            opening_plies=cfg.opening_plies,
+            board_size=self.config.board_size,
+            komi=self.config.komi,
+            num_sims=self.config.arena_sims,
+            c_puct=self.config.c_puct,
+            max_moves=self.config.max_moves,
+            win_threshold=self.config.win_threshold,
+            resign_threshold=self.config.resign_threshold,
+            opening_plies=self.config.opening_plies,
             device=self.device,
         )
 
     def run_iteration(self, iteration: int) -> Dict[str, Any]:
         """Execute one complete AlphaZero iteration with dynamic training steps and optimizer synchronization.
 
-        1. Self-Play -> buffer (auto-saved to buffer.pkl)
+        1. Self-Play -> buffer (saved to buffer.pkl once per iteration)
         2. Dynamic Train candidate model (sample-to-train ratio controlled to prevent overfitting)
         3. Arena: candidate vs best model (with gating check & opening plies)
-        4. Promote candidate or Rollback model + optimizer/scheduler states
+        4. Promote candidate or Rollback model + optimizer/scheduler states with deepcopy
         """
         print(f"\n{'='*30} ITERATION {iteration} {'='*30}")
 
@@ -225,9 +240,6 @@ class AlphaZeroPipeline:
         def on_game_finish(game_idx, samples):
             # Push game to buffer in memory
             self.buffer.push_game(samples)
-            # Periodically backup buffer every 5 games or on final game
-            if (game_idx + 1) % 5 == 0 or (game_idx + 1) == self.config.games_per_iter:
-                self.buffer.save(buffer_path)
 
         new_samples = generate_selfplay_games(
             model=self.best_model,
@@ -247,6 +259,8 @@ class AlphaZeroPipeline:
             game_callback=on_game_finish,
         )
 
+        # Save buffer once per iteration to avoid excessive I/O bottleneck
+        self.buffer.save(buffer_path)
         print(f"    [+] Added {len(new_samples)} samples. Total Replay Buffer: {len(self.buffer)} samples (Saved to disk).")
 
         # 2. Dynamic Training: prevent early overfitting when buffer is small
@@ -254,10 +268,10 @@ class AlphaZeroPipeline:
         effective_steps = min(self.config.train_steps, max_allowed_steps)
         print(f"[*] Step 2/3: Dynamic Training ({effective_steps} steps [cap: {self.config.train_steps}], batch size {self.config.batch_size})...")
 
-        # Ensure candidate starts from current best model weights and clean optimizer/scheduler momentum
+        # Ensure candidate starts from current best model weights and deepcopied optimizer/scheduler momentum
         self.candidate_model.load_state_dict(self.best_model.state_dict())
-        self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
-        self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
+        self.trainer.optimizer.load_state_dict(copy.deepcopy(self.best_optimizer_state))
+        self.trainer.scheduler.load_state_dict(copy.deepcopy(self.best_scheduler_state))
 
         train_metrics = self.trainer.train_iteration(
             replay_buffer=self.buffer,
@@ -276,7 +290,7 @@ class AlphaZeroPipeline:
         best_model_path = os.path.join(self.config.checkpoint_dir, "best_model.pt")
 
         if self.config.gating:
-            print(f"[*] Step 3/3: Arena Evaluation ({self.config.arena_games} games vs best model, opening_plies {self.config.opening_plies})...")
+            print(f"[*] Step 3/3: Arena Evaluation ({self.config.arena_games} games vs best model, opening_plies {self.config.opening_plies}, sims {self.config.arena_sims})...")
             arena_result: ArenaResult = self.arena.evaluate(
                 candidate_model=self.candidate_model,
                 baseline_model=self.best_model,
@@ -311,18 +325,18 @@ class AlphaZeroPipeline:
                     {
                         "iteration": iteration,
                         "model_state_dict": self.best_model.state_dict(),
-                        "optimizer_state_dict": self.best_optimizer_state,
-                        "scheduler_state_dict": self.best_scheduler_state,
+                        "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
+                        "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
                         "elo": cand_elo,
                     },
                     best_model_path,
                 )
             else:
                 print(f"    [-] Candidate REJECTED. (Winrate {arena_result.candidate_win_rate*100:.1f}% < {self.config.win_threshold*100:.1f}%)")
-                # Rollback candidate weights AND optimizer/scheduler state
+                # Rollback candidate weights AND optimizer/scheduler state with deepcopy
                 self.candidate_model.load_state_dict(self.best_model.state_dict())
-                self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
-                self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
+                self.trainer.optimizer.load_state_dict(copy.deepcopy(self.best_optimizer_state))
+                self.trainer.scheduler.load_state_dict(copy.deepcopy(self.best_scheduler_state))
 
             win_rate = arena_result.candidate_win_rate
             accepted = arena_result.accepted
@@ -333,15 +347,14 @@ class AlphaZeroPipeline:
             self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
             self.best_scheduler_state = copy.deepcopy(self.trainer.scheduler.state_dict())
             self.current_best_id = cand_id
-            cand_elo = self.elo_tracker.get_rating(self.current_best_id) + 10.0
+            cand_elo = self.elo_tracker.get_rating(self.current_best_id)
             best_elo = cand_elo
-            self.elo_tracker.ratings[cand_id] = cand_elo
             torch.save(
                 {
                     "iteration": iteration,
                     "model_state_dict": self.best_model.state_dict(),
-                    "optimizer_state_dict": self.best_optimizer_state,
-                    "scheduler_state_dict": self.best_scheduler_state,
+                    "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
+                    "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
                     "elo": cand_elo,
                 },
                 best_model_path,
@@ -403,13 +416,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="CoVayAI AlphaZero Pipeline")
     parser.add_argument("--iters", type=int, default=default_cfg.NUM_ITERS, help="Total number of iterations")
     parser.add_argument("--games", type=int, default=default_cfg.GAMES_PER_ITER, help="Self-play games per iteration")
-    parser.add_argument("--sims", type=int, default=default_cfg.NUM_SIMS, help="MCTS simulations per move")
+    parser.add_argument("--sims", type=int, default=default_cfg.NUM_SIMS, help="MCTS simulations per move for self-play")
+    parser.add_argument("--arena-sims", type=int, default=None, help="MCTS simulations per move in Arena (defaults to --sims if not set)")
     parser.add_argument("--train-steps", type=int, default=default_cfg.TRAIN_STEPS, help="Training steps per iter")
     parser.add_argument("--batch-size", type=int, default=default_cfg.BATCH_SIZE, help="Batch size")
     parser.add_argument("--arena-games", type=int, default=default_cfg.ARENA_GAMES, help="Arena match games")
     parser.add_argument("--opening-plies", type=int, default=default_cfg.OPENING_PLIES, help="Opening plies with tau=1 in Arena")
     parser.add_argument("--board-size", type=int, default=default_cfg.BOARD_SIZE, help="Board size")
-    parser.add_argument("--komi", type=float, default=default_cfg.KOMI, help="Komi compensation for White")
+    parser.add_argument("--komi", type=float, default=None, help="Komi compensation for White (default: 0.5 for <=7x7, 7.5 for >=9x9)")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device")
     parser.add_argument("--resign-disable-frac", type=float, default=default_cfg.RESIGN_DISABLE_FRAC, help="Fraction of selfplay games with resignation disabled")
@@ -419,10 +433,13 @@ def main() -> None:
     parser.set_defaults(resume=True, progress_bar=True, gating=True)
     args = parser.parse_args()
 
+    arena_sims = args.arena_sims if args.arena_sims is not None else args.sims
+
     cfg = PipelineConfig(
         num_iters=args.iters,
         games_per_iter=args.games,
         num_sims=args.sims,
+        arena_sims=arena_sims,
         train_steps=args.train_steps,
         batch_size=args.batch_size,
         arena_games=args.arena_games,

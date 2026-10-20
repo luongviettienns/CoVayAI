@@ -22,7 +22,7 @@
 ## 🏗️ 2. Kiến trúc Hệ thống
 
 ```
-go_ai/
+CoVayAI/
 ├── go/         # Trọng tài & Cơ chế bàn cờ (Luật Trung Quốc)
 │   ├── board.py       # Biểu diễn bàn cờ, chuỗi quân (chains), khí (liberties), bắt quân, cấm tự sát
 │   ├── zobrist.py     # Băm Zobrist hash 64-bit cho thế cờ, kiểm soát Positional Superko
@@ -40,7 +40,8 @@ go_ai/
 │   └── trainer.py     # Hàm mất mát tổng hợp L = (z - v)² - πᵀ log p + c||θ||², optimizer, lr scheduler
 ├── arena/      # Đấu trường đánh giá & Tuyển chọn
 │   ├── match.py       # Loạt trận đối đầu giữa θ_new và θ_best (luân phiên quân, τ -> 0)
-│   └── elo.py         # Đếm winrate (ngưỡng 55%) và tính toán cập nhật điểm Elo qua các thế hệ
+│   ├── elo.py         # Đếm winrate (ngưỡng 55%) và tính toán cập nhật điểm Elo qua các thế hệ
+│   └── baseline.py    # Đối thủ chuẩn ngẫu nhiên (RandomModel) và hàm đánh giá khách quan
 ├── gtp/        # Go Text Protocol Server
 │   └── gtp_server.py  # Chuẩn giao tiếp GTP v2 điều khiển engine từ GUI bên ngoài
 └── tests/      # Bộ kiểm thử tự động toàn diện (Unit tests, Rule invariants, Regression tests)
@@ -132,6 +133,6 @@ Trong Sabaki hoặc Lizzie:
 ---
 
 ## 📈 6. Tiến độ Phát triển & Kiểm thử
-- **Trạng thái:** Toàn bộ 8 Phase đã hoàn thành xuất sắc!
-- **Kiểm thử tự động:** 58/58 bài test passing 100%.
+- **Trạng thái:** Toàn bộ các Phase cốt lõi và tối ưu hóa vận hành đã hoàn thành xuất sắc!
+- **Kiểm thử tự động:** 65/65 bài test passing 100%.
 - Xem chi tiết từng giai đoạn tại [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md).

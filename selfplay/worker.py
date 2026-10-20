@@ -1,5 +1,6 @@
 """Self-Play worker generating AlphaZero training games."""
 
+from dataclasses import dataclass
 from typing import List, Tuple, Optional
 import numpy as np
 import torch
@@ -9,6 +10,31 @@ from go.scoring import compute_area_score
 from go.zobrist import opponent, BLACK, WHITE
 from nn.features import extract_features
 from mcts.search import MCTS, select_action
+
+
+@dataclass
+class GameResult:
+    """Detailed summary of a completed self-play game."""
+    samples: List[Tuple[np.ndarray, np.ndarray, float]]
+    winner: int
+    black_score: float
+    white_score: float
+    moves: int
+    end_reason: str
+    resigned_by: Optional[int] = None
+    seed: Optional[int] = None
+    board_size: int = 9
+    komi: float = 7.5
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        return self.samples[idx]
+
+    def __iter__(self):
+        return iter(self.samples)
+
 
 def play_selfplay_game(
     model,
@@ -23,7 +49,7 @@ def play_selfplay_game(
     max_moves: Optional[int] = None,
     komi: float = 7.5,
     device: Optional[torch.device] = None,
-) -> List[Tuple[np.ndarray, np.ndarray, float]]:
+) -> GameResult:
     """
     Play one full self-play game and collect training tuples of (state, pi, z).
     
@@ -41,7 +67,7 @@ def play_selfplay_game(
         device: Torch device (CUDA or CPU)
         
     Returns:
-        List of (state_features, pi, z) tuples for every step in the game.
+        GameResult containing samples and rich match metadata.
     """
     board = Board(size=board_size, max_moves=max_moves)
     mcts = MCTS(
@@ -78,16 +104,28 @@ def play_selfplay_game(
         # Store soft target pi (tau = 1.0) for training
         trajectory.append((features, pi, board.current_player))
 
-        # Advance board and MCTS search tree
-        board.play(action)
+        # Advance board and MCTS search tree with strict legality assertion
+        success = board.play(action)
+        if not success:
+            raise RuntimeError(
+                f"Self-play encountered illegal action {action} for player {board.current_player} "
+                f"at move {step} on board:\n{board.grid}"
+            )
         mcts.advance_root(action)
         step += 1
 
-    # Determine game winner
+    b_score, w_score, score_winner = compute_area_score(board, komi=komi)
+
+    # Determine game winner and end reason
     if resigned_player is not None:
         winner = opponent(resigned_player)
+        end_reason = "resign"
+    elif board.consecutive_passes >= 2:
+        winner = score_winner
+        end_reason = "two_passes"
     else:
-        _, _, winner = compute_area_score(board, komi=komi)
+        winner = score_winner
+        end_reason = "max_moves"
 
     # Format training samples: (s, pi, z_perspective)
     samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
@@ -95,7 +133,18 @@ def play_selfplay_game(
         z = 1.0 if player == winner else -1.0
         samples.append((s, p_target, z))
 
-    return samples
+    return GameResult(
+        samples=samples,
+        winner=winner,
+        black_score=b_score,
+        white_score=w_score,
+        moves=step,
+        end_reason=end_reason,
+        resigned_by=resigned_player,
+        board_size=board_size,
+        komi=komi,
+    )
+
 
 def generate_selfplay_games(
     model,
@@ -124,7 +173,7 @@ def generate_selfplay_games(
     except ImportError:
         tqdm = None
 
-    all_samples = []
+    all_samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
     iterator = range(num_games)
     pbar = None
     if progress_bar and tqdm is not None:
@@ -135,7 +184,7 @@ def generate_selfplay_games(
         # Disable resignation for a subset of games
         disable_resign = (np.random.random() < resign_disable_frac)
 
-        game_samples = play_selfplay_game(
+        game_result = play_selfplay_game(
             model=model,
             board_size=board_size,
             num_simulations=num_simulations,
@@ -149,19 +198,20 @@ def generate_selfplay_games(
             komi=komi,
             device=device,
         )
-        all_samples.extend(game_samples)
+        all_samples.extend(game_result.samples)
 
-        winner_str = "B" if game_samples and game_samples[-1][2] > 0 else "W"
+        winner_str = "B" if game_result.winner == BLACK else "W"
         if pbar is not None:
             pbar.set_postfix({
-                "moves": len(game_samples),
+                "moves": game_result.moves,
                 "winner": winner_str,
+                "reason": game_result.end_reason,
                 "total_samples": len(all_samples),
             })
         elif progress_bar:
-            print(f"   -> [Self-Play {game_idx + 1}/{num_games}] {len(game_samples)} nước | Người thắng: {winner_str} | Tổng mẫu: {len(all_samples)}")
+            print(f"   -> [Self-Play {game_idx + 1}/{num_games}] {game_result.moves} nước ({game_result.end_reason}) | Người thắng: {winner_str} | Tổng mẫu: {len(all_samples)}")
 
         if game_callback is not None:
-            game_callback(game_idx, game_samples)
+            game_callback(game_idx, game_result)
 
     return all_samples

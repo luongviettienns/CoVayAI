@@ -118,7 +118,11 @@ def play_arena_game(
         temp = 1.0 if move_count < opening_plies else 0.0
         action = select_action(pi, temperature=temp)
 
-        board.play(action)
+        if not board.play(action):
+            raise RuntimeError(
+                f"Arena encountered illegal action {action} for player {board.current_player} "
+                f"at move {move_count} on board:\n{board.grid}"
+            )
         move_sequence.append(action)
         move_count += 1
 

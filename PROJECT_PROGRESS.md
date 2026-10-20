@@ -147,3 +147,15 @@
   - Bảo vệ thư mục lưu trữ (`--no-resume` & `--force-new`): Từ chối chạy đè lên thư mục checkpoint đã có dữ liệu cũ nếu không bật cờ `--force-new`.
   - Bổ sung và kiểm định chặt chẽ các tham số CLI: `--seed`, `--resign-threshold`, `--max-moves`, `--force-new`.
 - [x] **Toàn bộ 75/75 bài kiểm thử tự động đạt 100% PASS** (bao gồm bộ test hồi quy scheduler `tests/test_train/test_scheduler_checkpoint.py`).
+
+### Phase 11: Kiểm Định Game Rules, MCTS Invariants & Chuẩn Hóa Metadata Self-Play (P2 & P3) [HOÀN THÀNH - 81/81 Tests Passed]
+- [x] **P2: Xác thực Luật Cờ, Bất Biến Bàn Cờ & MCTS Safety**:
+  - Property testing 100 ván cờ ngẫu nhiên (`tests/test_rules_and_selfplay.py`): Khẳng định mã băm tăng dần luôn khớp tuyệt đối với `compute_position_hash(grid)`, người chơi luân phiên chuẩn xác, lịch sử `history_positions` bảo toàn toàn vẹn và các ô đã có quân/tự sát đều bị từ chối trong $100\%$ các bước đi.
+  - Kiểm thử phân lập sâu `Board.copy()`: Đảm bảo bản sao lưu giữ đầy đủ lịch sử superko và grids, thao tác hạ quân trên bản sao hoàn toàn không ảnh hưởng đến bàn cờ gốc.
+  - An toàn MCTS: Kiểm chứng MCTS không bao giờ duyệt hoặc gán xác suất $>0$ cho nước đi bất hợp lệ, xử lý mượt mà trạng thái kết thúc sau 2 nước pass liên tiếp.
+  - Cơ chế bắt lỗi nghiêm ngặt: Kiểm tra giá trị trả về của `board.play(action)` trong cả `play_selfplay_game` và `play_arena_game`; lập tức raise `RuntimeError` chi tiết nếu phát hiện nước đi bất hợp lệ thay vì âm thầm bỏ qua.
+- [x] **P3: Chuẩn Hóa Metadata Ván Đấu & Sửa Lỗi Hiển Thị Winner Log**:
+  - Đóng gói cấu trúc `GameResult` (`selfplay/worker.py`): Lưu giữ trọn vẹn mẫu huấn luyện (`samples`), người thắng (`winner`), điểm số chi tiết (`black_score`, `white_score`), số nước đi (`moves`), lý do kết thúc (`end_reason`: `two_passes`, `max_moves`, `resign`) và người xin thua (`resigned_by`). Hỗ trợ giao diện sequence (`__len__`, `__getitem__`, `__iter__`) tương thích 100% với code cũ.
+  - Sửa lỗi hiển thị Winner Log: Thay thế cách tính suy diễn sai `winner_str = 'B' if game_samples[-1][2] > 0 else 'W'` bằng `winner_str = 'B' if game_result.winner == BLACK else 'W'`, bảo đảm tên người thắng hiển thị chính xác trong mọi tình huống (kể cả khi Trắng đi nước cuối và thắng/thua).
+  - Kiểm định cờ `--resign-disable-frac`: Đảm bảo khi cấm xin thua, ván đấu luôn diễn ra đến khi hai bên pass hoặc đạt `max_moves`, loại trừ hoàn toàn false-positive resign ở giai đoạn model chưa hội tụ.
+- [x] **Toàn bộ 81/81 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 10 modules kiểm thử của dự án!

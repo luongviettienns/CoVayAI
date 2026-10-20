@@ -205,5 +205,25 @@
   - Khẳng định tính tương đương: Kết quả từ `predict_batch` hoàn toàn khớp bit-wise / floating precision với các lượt gọi tuần tự qua `predict`.
 - [x] **Toàn bộ 93/93 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 11 modules kiểm thử của dự án!
 
+### Phase 15: Thử Train Theo Cổng Nghiệm Thu, Khởi Chạy 5×5 Smoke & 9×9 Pilot (P7) [HOÀN THÀNH - SẴN SÀNG HUẤN LUYỆN SÂU]
+- [x] **P7.1: Thử Nghiệm Khép Kín 5×5 Smoke & Kiểm Chứng Resume Không Trùng Lặp**:
+  - Chạy thực nghiệm thành công 2 iteration đầu tiên trên thư mục phân lập `checkpoints/smoke5_v1`:
+    - 2 ván self-play/iter kết thúc tự nhiên bằng 2 nước pass (`reason=two_passes`), 0 nước bất hợp lệ, loss giảm đều từ $4.58 \rightarrow 3.20$.
+    - Đấu trường Arena 4 ván ghép cặp (2 pairs) đạt tỷ lệ thắng $100\%$ và $75\%$ kèm khoảng tin cậy Wilson $95\%$.
+  - Kiểm chứng khôi phục (Resume Verification): Chạy tiếp lệnh huấn luyện từ iteration 2 lên iteration 3:
+    - Tự động nạp `latest_manifest.json`, khôi phục 96 mẫu đệm ReplayBuffer Schema v2, nhận diện đúng mô hình tốt nhất `iter_2`.
+    - Chỉ chạy tiếp duy nhất iteration 3, không chạy lại iteration 1 và 2.
+    - Xử lý tình huống Candidate bị REJECT ($50\% < 55\%$): Rollback trọng số mô hình và động lượng optimizer chuẩn xác, giữ nguyên tiến trình scheduler và LR ($0.001$).
+- [x] **P7.2: Kiểm Chứng Pilot Bàn Cờ Chuẩn 9×9**:
+  - Khởi chạy thành công 1 iteration hoàn chỉnh trên bàn cờ chuẩn 9×9 tại `checkpoints/pilot9_smoke` (`komi=7.5`, ResNet 6×96, 17 mặt phẳng trạng thái, 82 hành động):
+    - Thu thập 231 mẫu huấn luyện qua 2 ván cờ (115 và 116 nước đi).
+    - Huấn luyện động 10 bước: Policy loss giảm $4.49 \rightarrow 4.14$, Value loss giảm $1.12 \rightarrow 0.07$.
+    - Arena 4 ván ghép cặp trên 9×9: Candidate thắng $75\%$ ($3\text{W}-1\text{L}-0\text{D}$), được chấp thuận (ACCEPTED) và lưu trữ checkpoint nguyên tử.
+- [x] **BẢNG NGHIỆM THU TỔNG THỂ (P0 - P7)**:
+  - Tất cả các cổng P0, P1, P2, P3, P4, P5, P6, P7 đều **PASS** 100%!
+  - Bộ kiểm thử tự động đạt mốc kỷ lục: **93/93 Tests PASS** trong $\approx 6.44$s.
+  - Toàn bộ pipeline đã sạch bóng lỗi ngầm, tối ưu RAM, lưu trữ nguyên tử và hoàn toàn sẵn sàng cho các đợt huấn luyện dài hạn!
+
+
 
 

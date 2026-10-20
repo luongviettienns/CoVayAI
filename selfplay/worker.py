@@ -8,7 +8,7 @@ from go.board import Board
 from go.scoring import compute_area_score
 from go.zobrist import opponent, BLACK, WHITE
 from nn.features import extract_features
-from mcts.search import MCTS
+from mcts.search import MCTS, select_action
 
 def play_selfplay_game(
     model,
@@ -21,6 +21,7 @@ def play_selfplay_game(
     resign_threshold: float = -0.9,
     disable_resign: bool = False,
     max_moves: Optional[int] = None,
+    komi: float = 7.5,
     device: Optional[torch.device] = None,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     """
@@ -36,6 +37,7 @@ def play_selfplay_game(
         resign_threshold: Value score threshold below which player resigns
         disable_resign: If True, do not allow resignation
         max_moves: Maximum game length cap
+        komi: Area scoring compensation for White (default 7.5)
         device: Torch device (CUDA or CPU)
         
     Returns:
@@ -49,6 +51,7 @@ def play_selfplay_game(
         dirichlet_alpha=dirichlet_alpha,
         dirichlet_eps=dirichlet_eps,
         add_noise=True,
+        komi=komi,
         device=device,
     )
 
@@ -60,21 +63,19 @@ def play_selfplay_game(
         features = extract_features(board)
         temp = 1.0 if step < temp_moves else 0.0
 
-        pi = mcts.search(board, temperature=temp)
+        # MCTS search always returns soft visit count distribution (tau = 1.0)
+        pi = mcts.search(board)
 
         # Check for resignation (only after step 10 to avoid premature quits)
         if not disable_resign and step >= 10:
-            # mcts.root.value_score represents expected outcome for board.current_player
             if mcts.root.value_score < resign_threshold:
                 resigned_player = board.current_player
                 break
 
-        # Select action
-        if temp > 1e-2:
-            action = int(np.random.choice(len(pi), p=pi))
-        else:
-            action = int(np.argmax(pi))
+        # Select action using temperature (greedy with random tie-breaking after temp_moves)
+        action = select_action(pi, temperature=temp)
 
+        # Store soft target pi (tau = 1.0) for training
         trajectory.append((features, pi, board.current_player))
 
         # Advance board and MCTS search tree
@@ -86,7 +87,7 @@ def play_selfplay_game(
     if resigned_player is not None:
         winner = opponent(resigned_player)
     else:
-        _, _, winner = compute_area_score(board, komi=7.5)
+        _, _, winner = compute_area_score(board, komi=komi)
 
     # Format training samples: (s, pi, z_perspective)
     samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
@@ -108,6 +109,7 @@ def generate_selfplay_games(
     resign_threshold: float = -0.9,
     resign_disable_frac: float = 0.10,
     max_moves: Optional[int] = None,
+    komi: float = 7.5,
     device: Optional[torch.device] = None,
     progress_bar: bool = False,
     game_callback=None,
@@ -144,6 +146,7 @@ def generate_selfplay_games(
             resign_threshold=resign_threshold,
             disable_resign=disable_resign,
             max_moves=max_moves,
+            komi=komi,
             device=device,
         )
         all_samples.extend(game_samples)

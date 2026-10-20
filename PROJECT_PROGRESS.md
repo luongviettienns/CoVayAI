@@ -93,4 +93,34 @@
   - **Tùy chọn Continuous AlphaZero (`--no-gating`)**: Hỗ trợ chuyển đổi linh hoạt giữa cơ chế cổng chặn cổ điển (AlphaGo Zero 55%) và học liên tục trực tiếp (AlphaZero 2018).
   - **Tinh chỉnh siêu tham số**: Tăng `DIRICHLET_ALPHA` lên 0.30 tối ưu cho không gian bàn cờ $9 \times 9$, kết nối đầy đủ `resign_disable_frac` (10%) chống đầu hàng sai.
 - [x] `tests/test_pipeline.py`: Bài test tích hợp end-to-end kiểm chứng vòng lặp hoàn chỉnh (từ ván cờ tự chơi qua MCTS, tối ưu hóa gradient, đấu trường đối đầu cho tới xuất file checkpoint, `buffer.pkl` và tự động khôi phục khi resume).
-- [x] **Toàn bộ 58/58 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 8 modules của dự án!
+
+### Phase 9: Vá 4 Lỗi Thuật Toán Cốt Lõi, Tối Ưu Hiệu Năng & Hoàn Thiện Vận Hành [HOÀN THÀNH - 65/65 Tests Passed]
+- [x] **TDD Red-Green-Refactor**: Tạo bộ 4 bài test hồi quy trong `tests/test_regression.py` tái hiện chính xác 4 lỗi thuật toán nghiêm trọng (xác nhận FAIL đỏ), sau đó vá code và xác nhận toàn bộ 4 test cùng toàn bộ 65 tests đều PASS xanh.
+- [x] **Vá lỗi MCTS PUCT Sign & Corner Exploration (`mcts/node.py`)**:
+  - Đảo dấu Q-score: `-self.value_score + u` (vì `value_score` lưu kỳ vọng của đối thủ tại node con).
+  - Triệt tiêu thiên lệch góc A9 ở mô phỏng đầu tiên: `math.sqrt(max(1, parent_visit_count))` giúp prior $P(s, a)$ của mạng dẫn đường ngay từ mô phỏng 1.
+  - Lưu trữ `clean_prior` chống méo mó phân phối tích lũy khi áp dụng noise nhiều lần.
+- [x] **Vá lỗi Dirichlet Noise trên Subtree Reuse (`mcts/search.py`)**:
+  - Áp dụng Dirichlet noise trên `clean_prior` ở mọi lượt search bất kể root mới hay tái sử dụng từ `advance_root`.
+  - MCTS `search()` luôn trả về phân phối xác suất mềm $\pi$ ($\tau=1$) làm nhãn huấn luyện chuẩn AlphaZero.
+  - Cung cấp hàm `select_action(pi, temperature)` hỗ trợ bẻ hòa ngẫu nhiên (`random tie-breaking`).
+- [x] **Vá lỗi Policy Target One-Hot (`selfplay/worker.py`)**:
+  - Self-play lưu trữ $\pi$ mềm ($\tau=1$) vào Replay Buffer; nhiệt độ $\tau \to 0$ sau nước 12 chỉ dùng để chọn nước đi qua `select_action`.
+- [x] **Đa dạng hóa Đấu trường Arena (`arena/match.py`)**:
+  - Tham số `opening_plies=8`: 8 nước đầu lấy mẫu $\tau=1$ giúp 50 ván đấu phân nhánh đa dạng, triệt tiêu hiện tượng lặp lại 2 ván duy nhất.
+  - Hỗ trợ cờ `return_moves=True` cho phép theo dõi và kiểm thử chuỗi nước đi.
+- [x] **Chuẩn hóa Komi duy nhất & GTP Server Hoàn Thiện (`gtp/gtp_server.py`)**:
+  - Truyền `komi` đồng bộ từ `config.KOMI` $\to$ `MCTS`, `selfplay`, `arena`, và CLI `--komi`.
+  - Lệnh `cmd_undo`: khôi phục trạng thái chuẩn xác bằng cách replay toàn bộ `move_history` trên `Board` mới và `mcts.reset()`.
+  - Tự động reset MCTS khi phát hiện người chơi đi nước không xen kẽ màu quân.
+- [x] **Tối ưu Hóa Huấn luyện & Checkpoint (`train/trainer.py`, `main.py`)**:
+  - Chuyển sang `AdamW` (`weight_decay=0.01` cho Conv2D/Linear weights, `0.0` cho Biases và BatchNorm).
+  - Tích hợp `MultiStepLR(milestones=[30, 60], gamma=0.1)` và lưu/khôi phục toàn vẹn `scheduler_state_dict` trong checkpoint.
+- [x] **Tối Ưu Hiệu Năng Thực Chất (`go/board.py`, `nn/features.py`, `selfplay/replay_buffer.py`)**:
+  - `Board.copy()`: Sử dụng `Board.__new__(Board)` bỏ qua `__init__`, chia sẻ `_neighbors` và `zobrist` table.
+  - `get_legal_moves()`: Thêm shortcut hàng xóm trống (empty neighbor fast path) và kiểm tra superko bằng hash trước khi chạy BFS.
+  - D4 Augmentation: Hàm `apply_random_symmetry` chỉ tính đúng 1 phép biến đổi thay vì tính 8 phép rồi bỏ 7, có test khớp `test_apply_random_symmetry_matches_get_symmetries`.
+- [x] **Baseline Đối Kháng Khách Quan & Thử Nghiệm Bàn 5x5 (`arena/baseline.py`)**:
+  - Xây dựng mô-đun `RandomModel` và hàm `evaluate_against_random`.
+  - Chạy thử nghiệm thành công bàn $5\times 5$ (`komi=0.5`) qua 1 iteration hoàn chỉnh và đạt tỷ lệ thắng 100% trước đối thủ Random Player.
+- [x] **Toàn bộ 65/65 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 9 modules của dự án!

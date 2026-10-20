@@ -60,10 +60,27 @@ def test_arena_evaluation_and_alternation(models):
 
 
 def test_arena_deterministic_no_noise(models):
-    """Verify that arena plays deterministically (tau=0, no Dirichlet noise)."""
+    """Verify that arena plays deterministically when opening_plies=0 (tau=0, no Dirichlet noise)."""
     m1, m2 = models
-    # Running the same game twice with same seed should yield the exact same winner and move count
-    w1, c1 = play_arena_game(m1, m2, board_size=9, num_sims=5, max_moves=10)
-    w2, c2 = play_arena_game(m1, m2, board_size=9, num_sims=5, max_moves=10)
+    # Running the same game twice with opening_plies=0 should yield the exact same winner and move count
+    w1, c1 = play_arena_game(m1, m2, board_size=9, num_sims=5, max_moves=10, opening_plies=0)
+    w2, c2 = play_arena_game(m1, m2, board_size=9, num_sims=5, max_moves=10, opening_plies=0)
     assert w1 == w2
     assert c1 == c2
+
+
+def test_evaluate_against_random():
+    """Verify evaluation against random player baseline."""
+    from arena.baseline import evaluate_against_random
+    m_5x5 = AlphaZeroNet(board_size=5, num_res_blocks=1, num_filters=16)
+    m_5x5.eval()
+    win_rate, wins, losses, draws = evaluate_against_random(
+        model=m_5x5,
+        board_size=5,
+        komi=0.5,
+        num_games=2,
+        num_sims=5,
+        max_moves=10,
+    )
+    assert 0.0 <= win_rate <= 1.0
+    assert wins + losses + draws == 2

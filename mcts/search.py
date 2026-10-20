@@ -10,6 +10,37 @@ from go.zobrist import opponent
 from nn.features import extract_features
 from mcts.node import MCTSNode
 
+
+def select_action(pi: np.ndarray, temperature: float = 1.0) -> int:
+    """Select action from policy distribution pi according to temperature.
+    
+    Args:
+        pi: Soft policy distribution vector (probabilities summing to 1.0).
+        temperature: If > 1e-2, sample action proportionally (optionally scaled by 1/T).
+                     If <= 1e-2, greedily select action with maximum probability,
+                     breaking ties uniformly at random.
+                     
+    Returns:
+        Selected action integer.
+    """
+    if temperature > 1e-2:
+        if abs(temperature - 1.0) > 1e-4:
+            probs = pi ** (1.0 / temperature)
+            total = np.sum(probs)
+            if total > 0:
+                probs /= total
+            else:
+                probs = pi
+        else:
+            probs = pi
+        return int(np.random.choice(len(probs), p=probs))
+    else:
+        # Greedy selection with uniform random tie-breaking among max elements
+        max_val = np.max(pi)
+        candidates = np.flatnonzero(np.isclose(pi, max_val))
+        return int(np.random.choice(candidates))
+
+
 class MCTS:
     """
     Monte Carlo Tree Search algorithm guided by dual-head neural network.
@@ -24,6 +55,7 @@ class MCTS:
         dirichlet_alpha: float = 0.25,
         dirichlet_eps: float = 0.25,
         add_noise: bool = True,
+        komi: float = 7.5,
         device: Optional[torch.device] = None,
     ):
         self.model = model
@@ -32,6 +64,7 @@ class MCTS:
         self.dirichlet_alpha = dirichlet_alpha
         self.dirichlet_eps = dirichlet_eps
         self.add_noise = add_noise
+        self.komi = komi
         self.device = device
 
         self.root = MCTSNode(prior=1.0)
@@ -57,7 +90,7 @@ class MCTS:
         Returns value v from the perspective of board.current_player.
         """
         if board.is_game_over():
-            return get_winner_value(board, perspective=board.current_player, komi=7.5)
+            return get_winner_value(board, perspective=board.current_player, komi=self.komi)
 
         features = extract_features(board)
         mask = board.get_legal_moves()
@@ -84,7 +117,7 @@ class MCTS:
 
         # 2. Evaluate & Expand leaf
         if board.is_game_over():
-            v = get_winner_value(board, perspective=board.current_player, komi=7.5)
+            v = get_winner_value(board, perspective=board.current_player, komi=self.komi)
         else:
             v = self._expand_node(node, board)
 
@@ -98,16 +131,19 @@ class MCTS:
 
     def search(self, board: Board, temperature: float = 1.0) -> np.ndarray:
         """
-        Run MCTS simulations from the current board state.
+        Run MCTS simulations from the current board state and return normalized visit distribution.
         
+        AlphaZero Target Rule:
+            Target pi for neural network training is always the normalized visit distribution
+            (tau = 1.0). Action selection should use `select_action(pi, temperature)`.
+            
         Args:
             board: Current Board state
-            temperature: Exploration temperature tau for policy target pi.
-                         tau -> 0 produces deterministic greedy action.
-                         tau = 1.0 samples proportionally to visit counts.
+            temperature: Legacy exploration parameter. Note that search() returns soft
+                         normalized visit count distribution pi regardless of temperature.
                          
         Returns:
-            pi: Normalized policy vector of shape (N*N + 1,)
+            pi: Soft normalized visit count vector of shape (N*N + 1,) summing to 1.0.
         """
         if board.is_game_over():
             action_size = board.size * board.size + 1
@@ -115,23 +151,27 @@ class MCTS:
             pi[-1] = 1.0
             return pi
 
-        # If root is not yet expanded, expand it first
+        # 1. If root is not yet expanded, expand it first
         if self.root.is_leaf():
             self._expand_node(self.root, board)
-            # Apply Dirichlet noise on root children
-            if self.add_noise and len(self.root.children) > 0:
-                actions = list(self.root.children.keys())
-                noise = np.random.dirichlet([self.dirichlet_alpha] * len(actions))
-                for a, n in zip(actions, noise):
-                    self.root.children[a].prior = (
-                        (1.0 - self.dirichlet_eps) * self.root.children[a].prior
-                        + self.dirichlet_eps * n
-                    )
 
-        # Run simulations from root
+        # 2. Apply Dirichlet noise on root children whenever add_noise is True
+        # Always compute noise relative to clean_prior to avoid cumulative distortion across searches
+        if self.add_noise and len(self.root.children) > 0:
+            actions = list(self.root.children.keys())
+            noise = np.random.dirichlet([self.dirichlet_alpha] * len(actions))
+            for a, n in zip(actions, noise):
+                child = self.root.children[a]
+                child.prior = (
+                    (1.0 - self.dirichlet_eps) * child.clean_prior
+                    + self.dirichlet_eps * n
+                )
+
+        # 3. Run simulations from root
         for _ in range(self.num_simulations):
             self._simulate_once(board)
 
+        # 4. Compute soft visit count distribution (tau = 1.0)
         action_size = board.size * board.size + 1
         pi = np.zeros(action_size, dtype=np.float32)
 
@@ -139,17 +179,13 @@ class MCTS:
             pi[-1] = 1.0
             return pi
 
-        if temperature <= 1e-2:
-            # Greedy: select action with maximum visit count
-            best_action = max(self.root.children.items(), key=lambda item: item[1].visit_count)[0]
-            pi[best_action] = 1.0
+        for a, child in self.root.children.items():
+            pi[a] = child.visit_count
+
+        total = np.sum(pi)
+        if total > 0:
+            pi /= total
         else:
-            for a, child in self.root.children.items():
-                pi[a] = child.visit_count ** (1.0 / temperature)
-            total = np.sum(pi)
-            if total > 0:
-                pi /= total
-            else:
-                pi[-1] = 1.0
+            pi[-1] = 1.0
 
         return pi

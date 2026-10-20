@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from go.board import Board
 from go.zobrist import BLACK, WHITE
-from nn.features import extract_features, get_symmetries
+from nn.features import extract_features, get_symmetries, apply_random_symmetry
 
 def test_extract_features_shape():
     b = Board(size=9)
@@ -56,3 +56,22 @@ def test_d4_symmetries_count_and_invariants():
         assert np.isclose(pi_sym[-1], 0.3)
         # Sum of probabilities remains 1.0
         assert np.isclose(np.sum(pi_sym), 1.0)
+
+def test_apply_random_symmetry_matches_get_symmetries():
+    """Verify that apply_random_symmetry produces identical results to get_symmetries across all 8 D4 combinations."""
+    size = 9
+    feat = np.random.randn(17, size, size).astype(np.float32)
+    pi = np.random.dirichlet([1.0] * (size * size + 1)).astype(np.float32)
+
+    all_symmetries = get_symmetries(feat, pi)
+    assert len(all_symmetries) == 8
+
+    idx = 0
+    for flip in [False, True]:
+        for rot in range(4):
+            expected_feat, expected_pi = all_symmetries[idx]
+            actual_feat, actual_pi = apply_random_symmetry(feat, pi, flip=flip, rot=rot)
+
+            np.testing.assert_allclose(actual_feat, expected_feat)
+            np.testing.assert_allclose(actual_pi, expected_pi)
+            idx += 1

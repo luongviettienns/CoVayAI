@@ -1,10 +1,8 @@
 """Configuration for 9x9 AlphaZero Go engine."""
 
-from dataclasses import dataclass
-
 # --- Luật cờ ---
 BOARD_SIZE: int = 9
-KOMI: float = 7.5          # area scoring (Tromp-Taylor), superko
+KOMI: float = 7.5          # area scoring (Tromp-Taylor), superko (0.5 cho bàn 5x5)
 MAX_MOVES: int = 162       # 2 * N^2, quá số này thì ép kết thúc ván
 
 # --- Mạng nơ-ron ---
@@ -28,9 +26,11 @@ INFER_BATCH_SIZE: int = 64 # gom leaf thành batch cho GPU
 GAMES_PER_ITER: int = 100
 
 # --- Huấn luyện ---
-OPTIMIZER: str = "adam"
-LR: float = 1e-3           # giảm x0.1 khi loss đứng yên ~20 iteration
-WEIGHT_DECAY: float = 1e-4
+OPTIMIZER: str = "adamw"
+LR: float = 1e-3
+WEIGHT_DECAY: float = 1e-2 # 0.01 cho AdamW (chỉ áp dụng trên Conv2D/Linear weights)
+LR_MILESTONES = [30, 60]   # Giảm LR x0.1 tại iter 30 và 60
+LR_GAMMA: float = 0.1
 BATCH_SIZE: int = 256
 TRAIN_STEPS: int = 400     # số batch mỗi iteration
 BUFFER_SIZE: int = 200_000 # số mẫu (state, pi, z)
@@ -39,7 +39,8 @@ NUM_ITERS: int = 150
 
 # --- Arena ---
 ARENA_GAMES: int = 50
-ARENA_SIMS: int = 200      # tau = 0, không noise
+ARENA_SIMS: int = 200
+OPENING_PLIES: int = 8     # 8 nước đầu lấy mẫu tau=1 để đa dạng hóa thế trận
 WIN_THRESHOLD: float = 0.55
 
 # --- Lưu trữ ---

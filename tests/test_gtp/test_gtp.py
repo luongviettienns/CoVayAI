@@ -113,3 +113,31 @@ def test_final_score(engine):
     # Tromp-Taylor score should start with B+ or W+
     score_str = res.split()[1]
     assert score_str.startswith("B+") or score_str.startswith("W+")
+
+
+def test_undo(engine):
+    """Test undo command replaying history from scratch."""
+    from go.zobrist import BLACK, WHITE
+    engine.handle_line("clear_board")
+    engine.handle_line("play B D4")
+    assert engine.board.move_count == 1
+    engine.handle_line("play W E5")
+    assert engine.board.move_count == 2
+
+    # Undo move 2 (White E5)
+    res = engine.handle_line("undo")
+    assert res == "= \n\n"
+    assert engine.board.move_count == 1
+    assert engine.board.current_player == WHITE
+    assert len(engine.move_history) == 1
+
+    # Undo move 1 (Black D4)
+    res = engine.handle_line("undo")
+    assert res == "= \n\n"
+    assert engine.board.move_count == 0
+    assert engine.board.current_player == BLACK
+    assert len(engine.move_history) == 0
+
+    # Undo on empty board should return error
+    res = engine.handle_line("undo")
+    assert res.startswith("?")

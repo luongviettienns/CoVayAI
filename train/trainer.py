@@ -1,6 +1,6 @@
-"""AlphaZero Training Pipeline with Dual-Head Loss, AMP (FP16), and Checkpointing."""
+"""AlphaZero Training Pipeline with Dual-Head Loss, AMP (FP16), AdamW, and MultiStepLR."""
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 import os
 import torch
 import torch.nn as nn
@@ -14,8 +14,10 @@ class Trainer:
         self,
         model: nn.Module,
         lr: float = 1e-3,
-        weight_decay: float = 1e-4,
-        optimizer_type: str = "adam",
+        weight_decay: float = 1e-2,
+        optimizer_type: str = "adamw",
+        milestones: Optional[List[int]] = None,
+        lr_gamma: float = 0.1,
         use_amp: bool = True,
         device: Optional[torch.device] = None,
     ):
@@ -23,16 +25,46 @@ class Trainer:
         self.model = model.to(self.device)
         self.use_amp = use_amp and (self.device.type == "cuda")
 
-        if optimizer_type.lower() == "adam":
-            self.optimizer = torch.optim.Adam(
-                self.model.parameters(), lr=lr, weight_decay=weight_decay
-            )
+        # Separate parameters into 2D/4D (weights: Conv, Linear) and 1D (biases, BatchNorm)
+        decay_params = []
+        no_decay_params = []
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if param.ndim >= 2:
+                decay_params.append(param)
+            else:
+                no_decay_params.append(param)
+
+        param_groups = [
+            {"params": decay_params, "weight_decay": weight_decay},
+            {"params": no_decay_params, "weight_decay": 0.0},
+        ]
+
+        opt_name = optimizer_type.lower()
+        if opt_name == "adamw":
+            self.optimizer = torch.optim.AdamW(param_groups, lr=lr)
+        elif opt_name == "adam":
+            self.optimizer = torch.optim.Adam(param_groups, lr=lr)
         else:
-            self.optimizer = torch.optim.SGD(
-                self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay
-            )
+            self.optimizer = torch.optim.SGD(param_groups, lr=lr, momentum=0.9)
+
+        # Learning rate schedule across iterations (MultiStepLR is more stable than plateau on dynamic buffers)
+        self.milestones = milestones or [30, 60]
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            self.optimizer, milestones=self.milestones, gamma=lr_gamma
+        )
 
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
+
+    def step_scheduler(self) -> float:
+        """Step the learning rate scheduler and return the new learning rate."""
+        self.scheduler.step()
+        return self.get_lr()
+
+    def get_lr(self) -> float:
+        """Return the current learning rate."""
+        return self.optimizer.param_groups[0]["lr"]
 
     def train_step(
         self, states: torch.Tensor, target_pis: torch.Tensor, target_zs: torch.Tensor
@@ -124,20 +156,23 @@ class Trainer:
         }
 
     def save_checkpoint(self, filepath: str, iteration: int = 0, extra: Optional[dict] = None) -> None:
-        """Save model and optimizer state to file."""
+        """Save model, optimizer, and scheduler state to file."""
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
         checkpoint = {
             "iteration": iteration,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": self.scheduler.state_dict(),
         }
         if extra:
             checkpoint.update(extra)
         torch.save(checkpoint, filepath)
 
     def load_checkpoint(self, filepath: str) -> int:
-        """Load model and optimizer state from file and return saved iteration."""
+        """Load model, optimizer, and scheduler state from file and return saved iteration."""
         checkpoint = torch.load(filepath, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if "scheduler_state_dict" in checkpoint:
+            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         return checkpoint.get("iteration", 0)

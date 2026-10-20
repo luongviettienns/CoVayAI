@@ -13,7 +13,7 @@ import torch
 from go.board import Board
 from go.zobrist import BLACK, WHITE, EMPTY, opponent
 from go.scoring import compute_area_score
-from mcts.search import MCTS
+from mcts.search import MCTS, select_action
 
 
 COLUMNS = "ABCDEFGHJKLMNOPQRST"  # Note: 'I' is intentionally omitted in Go notation
@@ -101,8 +101,10 @@ class GTPEngine:
             num_simulations=self.num_sims,
             c_puct=self.c_puct,
             add_noise=False,
+            komi=self.komi,
             device=self.device,
         )
+        self.move_history: List[Tuple[int, int]] = []
 
         self.commands = {
             "protocol_version": self.cmd_protocol_version,
@@ -115,6 +117,7 @@ class GTPEngine:
             "komi": self.cmd_komi,
             "play": self.cmd_play,
             "genmove": self.cmd_genmove,
+            "undo": self.cmd_undo,
             "final_score": self.cmd_final_score,
             "showboard": self.cmd_showboard,
             "quit": self.cmd_quit,
@@ -153,11 +156,13 @@ class GTPEngine:
 
         self.board = Board(size=self.board_size)
         self.mcts.reset()
+        self.move_history.clear()
         return ""
 
     def cmd_clear_board(self, args: List[str]) -> str:
         self.board = Board(size=self.board_size)
         self.mcts.reset()
+        self.move_history.clear()
         return ""
 
     def cmd_komi(self, args: List[str]) -> str:
@@ -165,6 +170,7 @@ class GTPEngine:
             raise GTPError("syntax error: komi <float>")
         try:
             self.komi = float(args[0])
+            self.mcts.komi = self.komi
             return ""
         except ValueError:
             raise GTPError("syntax error: invalid komi")
@@ -187,8 +193,10 @@ class GTPEngine:
             # Resign
             return ""
 
-        # Adjust current player if needed
-        self.board.current_player = color
+        # If move order is non-alternating, reset MCTS tree to prevent perspective corruption
+        if self.board.current_player != color:
+            self.board.current_player = color
+            self.mcts.reset()
 
         legal_moves = self.board.get_legal_moves()
         if legal_moves[action] == 0:
@@ -196,6 +204,7 @@ class GTPEngine:
 
         self.board.play(action)
         self.mcts.advance_root(action)
+        self.move_history.append((color, action))
         return ""
 
     def cmd_genmove(self, args: List[str]) -> str:
@@ -207,18 +216,35 @@ class GTPEngine:
         except ValueError as e:
             raise GTPError(str(e))
 
-        self.board.current_player = color
+        if self.board.current_player != color:
+            self.board.current_player = color
+            self.mcts.reset()
 
         if self.board.is_game_over():
             return "pass"
 
-        pi = self.mcts.search(self.board, temperature=0.0)
-        action = int(np.argmax(pi))
+        pi = self.mcts.search(self.board)
+        action = select_action(pi, temperature=0.0)
 
         self.board.play(action)
         self.mcts.advance_root(action)
+        self.move_history.append((color, action))
 
         return action_to_vertex(action, self.board_size)
+
+    def cmd_undo(self, args: List[str]) -> str:
+        """Undo the last move by replaying history from scratch on a clean board."""
+        if not self.move_history:
+            raise GTPError("cannot undo: no moves played")
+
+        self.move_history.pop()
+        self.board = Board(size=self.board_size)
+        for color, action in self.move_history:
+            self.board.current_player = color
+            self.board.play(action)
+
+        self.mcts.reset()
+        return ""
 
     def cmd_final_score(self, args: List[str]) -> str:
         b_score, w_score, winner = compute_area_score(self.board, komi=self.komi)

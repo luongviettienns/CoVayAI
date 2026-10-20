@@ -3,7 +3,7 @@ import numpy as np
 from go.board import Board
 from go.zobrist import BLACK, WHITE
 from nn.model import AlphaZeroNet
-from mcts.search import MCTS
+from mcts.search import MCTS, select_action
 
 class DummyModel:
     """Mock model that returns uniform policy on legal moves and value 0.0."""
@@ -33,11 +33,13 @@ def test_mcts_temperature():
     mcts = MCTS(model=model, num_simulations=30, c_puct=1.5, add_noise=False)
     board = Board(size=9)
 
-    # Temperature tau = 0 (deterministic greedy)
-    pi_greedy = mcts.search(board, temperature=0.0)
-    best_action = np.argmax(pi_greedy)
-    assert pi_greedy[best_action] == 1.0
-    assert np.sum(pi_greedy) == 1.0
+    # Search always returns soft policy distribution (tau = 1.0)
+    pi_soft = mcts.search(board)
+    assert np.isclose(np.sum(pi_soft), 1.0)
+
+    # Action selection with temperature=0.0 selects greedy action
+    best_action = select_action(pi_soft, temperature=0.0)
+    assert pi_soft[best_action] == np.max(pi_soft)
 
 def test_mcts_dirichlet_noise():
     model = DummyModel()

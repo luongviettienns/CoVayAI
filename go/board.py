@@ -125,6 +125,33 @@ class Board:
     def is_valid_move(self, action: int, player: Optional[int] = None) -> bool:
         """Check if an action is legal for the given player (default: current player)."""
         p = player if player is not None else self.current_player
+        if action == self.pass_action:
+            return True
+
+        r, c = divmod(action, self.size)
+        if not (0 <= r < self.size and 0 <= c < self.size) or self.grid[r, c] != EMPTY:
+            return False
+
+        opp = opponent(p)
+        has_empty = False
+        has_opp = False
+
+        for nr, nc in self.get_neighbors(r, c):
+            color = self.grid[nr, nc]
+            if color == EMPTY:
+                has_empty = True
+            elif color == opp:
+                has_opp = True
+
+        # Fast path: Empty point with an empty neighbor and no opponent neighbors
+        # Cannot be suicide (has empty liberty), cannot capture (no opp neighbors),
+        # only check positional superko via single XOR hash.
+        if has_empty and not has_opp:
+            new_hash = self.zobrist.toggle_stone(self.current_position_hash, r, c, p)
+            if new_hash not in self.history_positions:
+                return True
+
+        # Fallback to full move simulation (BFS chain/liberties & superko)
         is_valid, _, _, _ = self._simulate_move(action, p)
         return is_valid
 
@@ -173,12 +200,17 @@ class Board:
         return self.consecutive_passes >= 2 or self.move_count >= self.max_moves
 
     def copy(self) -> "Board":
-        """Create a deep copy of the board for MCTS simulation."""
-        b = Board(size=self.size, max_moves=self.max_moves)
+        """Create a fast deep copy of the board for MCTS simulation bypassing __init__."""
+        b = Board.__new__(Board)
+        b.size = self.size
+        b.pass_action = self.pass_action
+        b.max_moves = self.max_moves
         b.grid = self.grid.copy()
         b.current_player = self.current_player
         b.consecutive_passes = self.consecutive_passes
         b.move_count = self.move_count
+        b.zobrist = self.zobrist
+        b._neighbors = self._neighbors
         b.current_position_hash = self.current_position_hash
         b.history_positions = set(self.history_positions)
         b.history_grids = [g.copy() for g in self.history_grids[-8:]]

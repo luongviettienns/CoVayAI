@@ -3,8 +3,8 @@
 Coordinates the end-to-end AlphaZero loop:
   1. Self-Play: Generate training data using current best model (with Live Progress Bar)
   2. Dynamic Training: Train candidate model with dynamic step scaling (anti-overfitting on early buffer)
-  3. Arena Evaluation: Head-to-head match between candidate and best models (with optional continuous gating)
-  4. Model Promotion & Optimizer Sync: Sync optimizer momentum on promotion/rollback to prevent gradient corruption
+  3. Arena Evaluation: Head-to-head match between candidate and best models (with opening randomization)
+  4. Model Promotion & Optimizer Sync: Sync optimizer momentum & scheduler on promotion/rollback
   5. Checkpoint & Resume: Auto-saves buffer.pkl, ratings.json, and supports seamless resuming
 """
 
@@ -30,6 +30,7 @@ class PipelineConfig:
     """Hyperparameters and runtime configuration for the AlphaZero pipeline."""
 
     board_size: int = default_cfg.BOARD_SIZE
+    komi: float = default_cfg.KOMI
     num_res_blocks: int = default_cfg.NUM_BLOCKS
     num_filters: int = default_cfg.NUM_FILTERS
     use_amp: bool = default_cfg.USE_AMP
@@ -45,16 +46,19 @@ class PipelineConfig:
     games_per_iter: int = default_cfg.GAMES_PER_ITER
 
     # Training
+    optimizer: str = default_cfg.OPTIMIZER
     batch_size: int = default_cfg.BATCH_SIZE
     train_steps: int = default_cfg.TRAIN_STEPS
     lr: float = default_cfg.LR
     weight_decay: float = default_cfg.WEIGHT_DECAY
     buffer_size: int = default_cfg.BUFFER_SIZE
+    augment: bool = default_cfg.AUGMENT
     num_iters: int = default_cfg.NUM_ITERS
 
     # Arena & Gating
     arena_games: int = default_cfg.ARENA_GAMES
     arena_sims: int = default_cfg.ARENA_SIMS
+    opening_plies: int = default_cfg.OPENING_PLIES
     win_threshold: float = default_cfg.WIN_THRESHOLD
     gating: bool = True
 
@@ -97,6 +101,9 @@ class AlphaZeroPipeline:
             model=self.candidate_model,
             lr=cfg.lr,
             weight_decay=cfg.weight_decay,
+            optimizer_type=cfg.optimizer,
+            milestones=default_cfg.LR_MILESTONES,
+            lr_gamma=default_cfg.LR_GAMMA,
             device=self.device,
             use_amp=cfg.use_amp and self.device.type == "cuda",
         )
@@ -108,6 +115,7 @@ class AlphaZeroPipeline:
         self.start_iteration = 1
         self.current_best_id = "iter_0"
         self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
+        self.best_scheduler_state = copy.deepcopy(self.trainer.scheduler.state_dict())
 
         buffer_path = os.path.join(self.config.checkpoint_dir, "buffer.pkl")
         ratings_path = os.path.join(self.config.checkpoint_dir, "ratings.json")
@@ -143,7 +151,7 @@ class AlphaZeroPipeline:
                 self.start_iteration = max_iter + 1
                 self.current_best_id = f"iter_{max_iter}"
 
-                # Load best model weights and optimizer state
+                # Load best model weights and optimizer/scheduler state
                 if os.path.exists(best_model_path):
                     ckpt = torch.load(best_model_path, map_location=self.device)
                     state = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
@@ -151,6 +159,9 @@ class AlphaZeroPipeline:
                     if "optimizer_state_dict" in ckpt:
                         self.best_optimizer_state = copy.deepcopy(ckpt["optimizer_state_dict"])
                         self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+                    if "scheduler_state_dict" in ckpt:
+                        self.best_scheduler_state = copy.deepcopy(ckpt["scheduler_state_dict"])
+                        self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
                     print(f"[+] Resuming from Iteration {self.start_iteration} with best model from {best_model_path} (Elo: {self.elo_tracker.get_rating(self.current_best_id):.1f})")
             elif os.path.exists(best_model_path):
                 ckpt = torch.load(best_model_path, map_location=self.device)
@@ -159,6 +170,9 @@ class AlphaZeroPipeline:
                 if "optimizer_state_dict" in ckpt:
                     self.best_optimizer_state = copy.deepcopy(ckpt["optimizer_state_dict"])
                     self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+                if "scheduler_state_dict" in ckpt:
+                    self.best_scheduler_state = copy.deepcopy(ckpt["scheduler_state_dict"])
+                    self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
                 print(f"[+] Loaded baseline weights from {best_model_path}")
 
         # Always ensure best_model.pt exists on disk as baseline
@@ -168,6 +182,7 @@ class AlphaZeroPipeline:
                     "iteration": 0,
                     "model_state_dict": self.best_model.state_dict(),
                     "optimizer_state_dict": self.best_optimizer_state,
+                    "scheduler_state_dict": self.best_scheduler_state,
                     "elo": 1000.0,
                 },
                 best_model_path,
@@ -176,16 +191,18 @@ class AlphaZeroPipeline:
         # Candidate starts with identical weights and optimizer state to current best
         self.candidate_model.load_state_dict(self.best_model.state_dict())
         self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+        self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
 
         # Arena
         self.arena = Arena(
             board_size=cfg.board_size,
-            komi=default_cfg.KOMI,
+            komi=cfg.komi,
             num_sims=cfg.arena_sims,
             c_puct=cfg.c_puct,
             max_moves=cfg.max_moves if cfg.max_moves is not None else default_cfg.MAX_MOVES,
             win_threshold=cfg.win_threshold,
             resign_threshold=cfg.resign_threshold,
+            opening_plies=cfg.opening_plies,
             device=self.device,
         )
 
@@ -194,13 +211,13 @@ class AlphaZeroPipeline:
 
         1. Self-Play -> buffer (auto-saved to buffer.pkl)
         2. Dynamic Train candidate model (sample-to-train ratio controlled to prevent overfitting)
-        3. Arena: candidate vs best model (with gating check)
-        4. Promote candidate or Rollback model + optimizer states
+        3. Arena: candidate vs best model (with gating check & opening plies)
+        4. Promote candidate or Rollback model + optimizer/scheduler states
         """
         print(f"\n{'='*30} ITERATION {iteration} {'='*30}")
 
         # 1. Self-play
-        print(f"[*] Step 1/3: Self-play ({self.config.games_per_iter} games, {self.config.num_sims} sims)...")
+        print(f"[*] Step 1/3: Self-play ({self.config.games_per_iter} games, {self.config.num_sims} sims, komi {self.config.komi})...")
         self.best_model.eval()
 
         buffer_path = os.path.join(self.config.checkpoint_dir, "buffer.pkl")
@@ -224,6 +241,7 @@ class AlphaZeroPipeline:
             resign_threshold=self.config.resign_threshold,
             resign_disable_frac=self.config.resign_disable_frac,
             max_moves=self.config.max_moves,
+            komi=self.config.komi,
             device=self.device,
             progress_bar=self.config.progress_bar,
             game_callback=on_game_finish,
@@ -236,14 +254,16 @@ class AlphaZeroPipeline:
         effective_steps = min(self.config.train_steps, max_allowed_steps)
         print(f"[*] Step 2/3: Dynamic Training ({effective_steps} steps [cap: {self.config.train_steps}], batch size {self.config.batch_size})...")
 
-        # Ensure candidate starts from current best model weights and clean optimizer momentum
+        # Ensure candidate starts from current best model weights and clean optimizer/scheduler momentum
         self.candidate_model.load_state_dict(self.best_model.state_dict())
         self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+        self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
 
         train_metrics = self.trainer.train_iteration(
             replay_buffer=self.buffer,
             steps=effective_steps,
             batch_size=self.config.batch_size,
+            augment=self.config.augment,
             progress_bar=self.config.progress_bar,
         )
         avg_loss = train_metrics["total_loss"]
@@ -256,7 +276,7 @@ class AlphaZeroPipeline:
         best_model_path = os.path.join(self.config.checkpoint_dir, "best_model.pt")
 
         if self.config.gating:
-            print(f"[*] Step 3/3: Arena Evaluation ({self.config.arena_games} games vs best model)...")
+            print(f"[*] Step 3/3: Arena Evaluation ({self.config.arena_games} games vs best model, opening_plies {self.config.opening_plies})...")
             arena_result: ArenaResult = self.arena.evaluate(
                 candidate_model=self.candidate_model,
                 baseline_model=self.best_model,
@@ -285,21 +305,24 @@ class AlphaZeroPipeline:
                 print(f"    [+] Candidate ACCEPTED! (Winrate {arena_result.candidate_win_rate*100:.1f}% >= {self.config.win_threshold*100:.1f}%)")
                 self.best_model.load_state_dict(self.candidate_model.state_dict())
                 self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
+                self.best_scheduler_state = copy.deepcopy(self.trainer.scheduler.state_dict())
                 self.current_best_id = cand_id
                 torch.save(
                     {
                         "iteration": iteration,
                         "model_state_dict": self.best_model.state_dict(),
                         "optimizer_state_dict": self.best_optimizer_state,
+                        "scheduler_state_dict": self.best_scheduler_state,
                         "elo": cand_elo,
                     },
                     best_model_path,
                 )
             else:
                 print(f"    [-] Candidate REJECTED. (Winrate {arena_result.candidate_win_rate*100:.1f}% < {self.config.win_threshold*100:.1f}%)")
-                # Rollback candidate weights AND optimizer state
+                # Rollback candidate weights AND optimizer/scheduler state
                 self.candidate_model.load_state_dict(self.best_model.state_dict())
                 self.trainer.optimizer.load_state_dict(self.best_optimizer_state)
+                self.trainer.scheduler.load_state_dict(self.best_scheduler_state)
 
             win_rate = arena_result.candidate_win_rate
             accepted = arena_result.accepted
@@ -308,6 +331,7 @@ class AlphaZeroPipeline:
             print("    [*] Gating disabled (Continuous AlphaZero training): Candidate promoted directly.")
             self.best_model.load_state_dict(self.candidate_model.state_dict())
             self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
+            self.best_scheduler_state = copy.deepcopy(self.trainer.scheduler.state_dict())
             self.current_best_id = cand_id
             cand_elo = self.elo_tracker.get_rating(self.current_best_id) + 10.0
             best_elo = cand_elo
@@ -317,12 +341,17 @@ class AlphaZeroPipeline:
                     "iteration": iteration,
                     "model_state_dict": self.best_model.state_dict(),
                     "optimizer_state_dict": self.best_optimizer_state,
+                    "scheduler_state_dict": self.best_scheduler_state,
                     "elo": cand_elo,
                 },
                 best_model_path,
             )
             win_rate = 1.0
             accepted = True
+
+        # Step LR Scheduler after each iteration
+        current_lr = self.trainer.step_scheduler()
+        print(f"    [*] Learning Rate: {current_lr:.6f}")
 
         # Save iteration checkpoint
         iter_ckpt_path = os.path.join(
@@ -336,6 +365,7 @@ class AlphaZeroPipeline:
                 "win_rate": win_rate,
                 "candidate_elo": cand_elo,
                 "best_elo": best_elo,
+                "lr": current_lr,
             },
         )
 
@@ -355,6 +385,7 @@ class AlphaZeroPipeline:
             "accepted": accepted,
             "candidate_elo": cand_elo,
             "best_elo": best_elo,
+            "lr": current_lr,
         }
 
     def train(self) -> None:
@@ -376,7 +407,9 @@ def main() -> None:
     parser.add_argument("--train-steps", type=int, default=default_cfg.TRAIN_STEPS, help="Training steps per iter")
     parser.add_argument("--batch-size", type=int, default=default_cfg.BATCH_SIZE, help="Batch size")
     parser.add_argument("--arena-games", type=int, default=default_cfg.ARENA_GAMES, help="Arena match games")
+    parser.add_argument("--opening-plies", type=int, default=default_cfg.OPENING_PLIES, help="Opening plies with tau=1 in Arena")
     parser.add_argument("--board-size", type=int, default=default_cfg.BOARD_SIZE, help="Board size")
+    parser.add_argument("--komi", type=float, default=default_cfg.KOMI, help="Komi compensation for White")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device")
     parser.add_argument("--resign-disable-frac", type=float, default=default_cfg.RESIGN_DISABLE_FRAC, help="Fraction of selfplay games with resignation disabled")
@@ -393,7 +426,9 @@ def main() -> None:
         train_steps=args.train_steps,
         batch_size=args.batch_size,
         arena_games=args.arena_games,
+        opening_plies=args.opening_plies,
         board_size=args.board_size,
+        komi=args.komi,
         checkpoint_dir=args.checkpoint_dir,
         device=args.device,
         progress_bar=args.progress_bar,

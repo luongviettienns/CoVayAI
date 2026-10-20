@@ -5,7 +5,7 @@ from collections import deque
 import pickle
 import numpy as np
 import torch
-from nn.features import get_symmetries
+from nn.features import apply_random_symmetry
 
 class ReplayBuffer:
     """Sliding-window replay buffer storing tuples of (state, pi, z) with D4 augmentation."""
@@ -29,8 +29,8 @@ class ReplayBuffer:
         """
         Sample a mini-batch of training data.
         
-        If augment is True, applies random D4 symmetry transformations (rotation + reflection)
-        to each sampled state and policy target.
+        If augment is True, applies random D4 symmetry transformation (rotation + reflection)
+        directly to each sampled state and policy target.
         
         Returns:
             (states, pis, zs) as PyTorch tensors:
@@ -53,10 +53,7 @@ class ReplayBuffer:
             s, pi, z = self.buffer[idx]
 
             if augment:
-                # Randomly select one of the 8 D4 dihedral symmetries
-                symmetries = get_symmetries(s, pi)
-                sym_idx = np.random.randint(len(symmetries))
-                s_aug, pi_aug = symmetries[sym_idx]
+                s_aug, pi_aug = apply_random_symmetry(s, pi)
                 batch_states.append(s_aug)
                 batch_pis.append(pi_aug)
             else:

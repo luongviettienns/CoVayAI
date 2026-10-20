@@ -1,14 +1,14 @@
 """Head-to-head match playing and model evaluation for AlphaZero Go."""
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Union, overload, Literal
 import numpy as np
 import torch
 
 from go.board import Board
 from go.zobrist import BLACK, WHITE, opponent
 from go.scoring import get_winner_value
-from mcts.search import MCTS
+from mcts.search import MCTS, select_action
 
 
 @dataclass
@@ -25,6 +25,7 @@ class ArenaResult:
     candidate_as_white_wins: int = 0
 
 
+@overload
 def play_arena_game(
     black_model,
     white_model,
@@ -34,15 +35,52 @@ def play_arena_game(
     c_puct: float = 1.5,
     max_moves: int = 162,
     resign_threshold: Optional[float] = None,
+    opening_plies: int = 8,
+    return_moves: Literal[False] = False,
     device: Optional[torch.device] = None,
-) -> Tuple[float, int]:
+) -> Tuple[float, int]: ...
+
+
+@overload
+def play_arena_game(
+    black_model,
+    white_model,
+    board_size: int = 9,
+    komi: float = 7.5,
+    num_sims: int = 200,
+    c_puct: float = 1.5,
+    max_moves: int = 162,
+    resign_threshold: Optional[float] = None,
+    opening_plies: int = 8,
+    return_moves: Literal[True] = ...,
+    device: Optional[torch.device] = None,
+) -> Tuple[float, int, List[int]]: ...
+
+
+def play_arena_game(
+    black_model,
+    white_model,
+    board_size: int = 9,
+    komi: float = 7.5,
+    num_sims: int = 200,
+    c_puct: float = 1.5,
+    max_moves: int = 162,
+    resign_threshold: Optional[float] = None,
+    opening_plies: int = 8,
+    return_moves: bool = False,
+    device: Optional[torch.device] = None,
+) -> Union[Tuple[float, int], Tuple[float, int, List[int]]]:
     """Play a single head-to-head game between black_model and white_model.
 
-    Uses deterministic MCTS (temperature=0.0, no Dirichlet noise).
+    Uses MCTS with temperature=1.0 for the first opening_plies moves to ensure diverse
+    game exploration across matches, then switches to temperature=0.0 (greedy with random tie-breaking).
 
     Returns:
-        winner: +1.0 if Black wins, -1.0 if White wins, 0.0 if draw.
-        move_count: Number of moves played in the game.
+        If return_moves is False:
+            winner: +1.0 if Black wins, -1.0 if White wins, 0.0 if draw.
+            move_count: Number of moves played in the game.
+        If return_moves is True:
+            (winner, move_count, move_sequence)
     """
     board = Board(size=board_size, max_moves=max_moves)
 
@@ -51,6 +89,7 @@ def play_arena_game(
         num_simulations=num_sims,
         c_puct=c_puct,
         add_noise=False,
+        komi=komi,
         device=device,
     )
     mcts_white = MCTS(
@@ -58,15 +97,17 @@ def play_arena_game(
         num_simulations=num_sims,
         c_puct=c_puct,
         add_noise=False,
+        komi=komi,
         device=device,
     )
 
     move_count = 0
     resigned_player: Optional[int] = None
+    move_sequence: List[int] = []
 
     while not board.is_game_over():
         curr_mcts = mcts_black if board.current_player == BLACK else mcts_white
-        pi = curr_mcts.search(board, temperature=0.0)
+        pi = curr_mcts.search(board)
 
         # Check resignation if enabled (only after move 10 to avoid premature quits)
         if resign_threshold is not None and move_count >= 10:
@@ -74,8 +115,11 @@ def play_arena_game(
                 resigned_player = board.current_player
                 break
 
-        action = int(np.argmax(pi))
+        temp = 1.0 if move_count < opening_plies else 0.0
+        action = select_action(pi, temperature=temp)
+
         board.play(action)
+        move_sequence.append(action)
         move_count += 1
 
         # Advance subtree roots for both players
@@ -85,10 +129,13 @@ def play_arena_game(
     if resigned_player is not None:
         # Resigned player loses, opponent wins
         winner_color = opponent(resigned_player)
-        return (+1.0 if winner_color == BLACK else -1.0), move_count
+        winner_val = +1.0 if winner_color == BLACK else -1.0
+    else:
+        winner_val = get_winner_value(board, perspective=BLACK, komi=komi)
 
-    winner_value = get_winner_value(board, perspective=BLACK, komi=komi)
-    return winner_value, move_count
+    if return_moves:
+        return winner_val, move_count, move_sequence
+    return winner_val, move_count
 
 
 class Arena:
@@ -103,6 +150,7 @@ class Arena:
         max_moves: int = 162,
         win_threshold: float = 0.55,
         resign_threshold: Optional[float] = None,
+        opening_plies: int = 8,
         device: Optional[torch.device] = None,
     ):
         self.board_size = board_size
@@ -112,6 +160,7 @@ class Arena:
         self.max_moves = max_moves
         self.win_threshold = win_threshold
         self.resign_threshold = resign_threshold
+        self.opening_plies = opening_plies
         self.device = device
 
     def evaluate(
@@ -162,6 +211,7 @@ class Arena:
                     c_puct=self.c_puct,
                     max_moves=self.max_moves,
                     resign_threshold=self.resign_threshold,
+                    opening_plies=self.opening_plies,
                     device=self.device,
                 )
                 if winner > 0:
@@ -182,6 +232,7 @@ class Arena:
                     c_puct=self.c_puct,
                     max_moves=self.max_moves,
                     resign_threshold=self.resign_threshold,
+                    opening_plies=self.opening_plies,
                     device=self.device,
                 )
                 if winner < 0:  # White won -> candidate won

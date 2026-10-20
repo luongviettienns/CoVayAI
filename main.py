@@ -202,7 +202,7 @@ class AlphaZeroPipeline:
         ).to(self.device)
 
         # Replay Buffer
-        self.buffer = ReplayBuffer(capacity=cfg.buffer_size)
+        self.buffer = ReplayBuffer(capacity=cfg.buffer_size, board_size=cfg.board_size)
 
         # Trainer for candidate model
         self.trainer = Trainer(

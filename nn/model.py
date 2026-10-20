@@ -125,3 +125,37 @@ class AlphaZeroNet(nn.Module):
         val = float(value[0, 0].item()) if single_input else value.cpu().numpy()
 
         return probs, val
+
+    @torch.no_grad()
+    def predict_batch(
+        self,
+        state_features: np.ndarray,
+        legal_moves_masks: Optional[np.ndarray] = None,
+        device: Optional[torch.device] = None,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Fast batch inference evaluation for multiple states.
+
+        Args:
+            state_features: numpy array of shape (B, C, N, N)
+            legal_moves_masks: optional binary masks of shape (B, N*N + 1)
+            device: target torch device (default: next(self.parameters()).device)
+
+        Returns:
+            (probabilities: np.ndarray of shape (B, action_size), values: np.ndarray of shape (B, 1))
+        """
+        self.eval()
+        dev = device if device is not None else next(self.parameters()).device
+
+        x_tensor = torch.from_numpy(state_features).to(dev)
+        policy_logits, value = self(x_tensor)
+
+        if legal_moves_masks is not None:
+            mask_tensor = torch.from_numpy(legal_moves_masks).to(dev)
+            policy_logits = torch.where(mask_tensor > 0, policy_logits, torch.tensor(-1e9, device=dev))
+
+        probs = F.softmax(policy_logits, dim=-1).cpu().numpy()
+        val = value.cpu().numpy()
+
+        return probs, val
+

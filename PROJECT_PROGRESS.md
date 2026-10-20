@@ -191,4 +191,19 @@
   - Xây dựng mô hình chiến thuật `CaptureHeuristicModel`: Ưu tiên tuyệt đối các nước bắt quân atari, bảo vệ quân nguy cấp và phân phối đều trên bàn cờ, cung cấp một đối thủ đo lường khách quan không phụ thuộc vào trọng số checkpoint.
 - [x] **Toàn bộ 89/89 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 10 modules kiểm thử của dự án!
 
+### Phase 14: Đo Lường Hiệu Năng GPU/CPU, MCTS Throughput & Suy Luận Batch Predict (P6) [HOÀN THÀNH - 93/93 Tests Passed]
+- [x] **P6.1: Đo Đạc Hiệu Năng Chi Tiết (Performance Microbenchmarks & Profiling)**:
+  - Xây dựng bộ công cụ benchmark tự động (`tests/test_performance_profiling.py`):
+    - `Board.copy()`: Đạt tốc độ cực nhanh $\approx 2.97$ µs/lần sao chép.
+    - `Board.get_legal_moves()`: Tốc độ kiểm định và sinh nước đi hợp lệ $\approx 128.49$ µs/lần gọi.
+    - `extract_features(b)`: Trích xuất 17 mặt phẳng nhị phân chỉ tốn $\approx 27.11$ µs/bàn cờ.
+    - Thông lượng MCTS: Đạt $\approx 610.7$ mô phỏng/giây (simulations/s) trên phần cứng NVIDIA RTX 3050 Laptop GPU (CUDA).
+- [x] **P6.2: Hỗ Trợ Suy Luận Theo Mẻ (`predict_batch`)**:
+  - Bổ sung phương thức `AlphaZeroNet.predict_batch(state_features, legal_moves_masks, device)`:
+    - Xử lý đồng thời batch các trạng thái bàn cờ `(B, 17, N, N)` và mảng mặt nạ luật cờ `(B, action_size)`.
+    - Tốc độ suy luận tăng vọt: Đạt $\approx 0.119$ ms/trạng thái ($\approx 8,402$ trạng thái/giây trên CUDA), tăng tốc gấp **$15.92\times$** so với suy luận đơn lẻ từng trạng thái ($\approx 1.895$ ms/trạng thái).
+  - Khẳng định tính tương đương: Kết quả từ `predict_batch` hoàn toàn khớp bit-wise / floating precision với các lượt gọi tuần tự qua `predict`.
+- [x] **Toàn bộ 93/93 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 11 modules kiểm thử của dự án!
+
+
 

@@ -56,3 +56,32 @@ def test_cuda_execution():
     policy_logits, value = net(x)
     assert policy_logits.is_cuda
     assert value.is_cuda
+
+
+def test_predict_batch():
+    net = AlphaZeroNet(board_size=9, num_res_blocks=2, num_filters=32)
+    net.eval()
+    batch_features = np.zeros((4, 17, 9, 9), dtype=np.float32)
+    batch_features[0, 0, 0, 0] = 1.0
+    batch_features[1, 1, 1, 1] = 1.0
+
+    masks = np.ones((4, 82), dtype=np.int8)
+    masks[0, 10:] = 0  # Only moves 0-9 legal for sample 0
+
+    probs_b, vals_b = net.predict_batch(batch_features, legal_moves_masks=masks)
+
+    assert probs_b.shape == (4, 82)
+    assert vals_b.shape == (4, 1)
+
+    for i in range(4):
+        assert np.isclose(np.sum(probs_b[i]), 1.0)
+        assert -1.0 <= vals_b[i, 0] <= 1.0
+
+    # Sample 0 illegal moves must have probability 0
+    assert np.all(probs_b[0, 10:] == 0.0)
+
+    # Check match with single predict
+    p0, v0 = net.predict(batch_features[0], legal_moves_mask=masks[0])
+    np.testing.assert_allclose(probs_b[0], p0, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(vals_b[0, 0], v0, rtol=1e-5, atol=1e-5)
+

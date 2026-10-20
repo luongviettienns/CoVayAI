@@ -174,3 +174,21 @@
   - Ghi tệp đĩa nguyên tử: Lưu thông qua tệp `.tmp`, flush/fsync và hoán đổi bằng `os.replace`.
 - [x] **Toàn bộ 84/84 bài kiểm thử tự động đạt 100% PASS** (bổ sung 3 test chuyên sâu cho vòng đời ring buffer, schema v2 persistence và benchmark scaling)!
 
+### Phase 13: Chuẩn Hóa Đấu Trường Arena Khai Cuộc Ghép Cặp (Paired Openings), Thống Kê Khoảng Tin Cậy 95% & Fixed Baselines (P5) [HOÀN THÀNH - 89/89 Tests Passed]
+- [x] **P5.1: Đấu Trường Khai Cuộc Ghép Cặp (Paired Openings & Color Swapping)**:
+  - Hàm độc lập sinh khai cuộc `generate_opening_sequence`: Tạo chuỗi $K$ nước đi khai cuộc hợp lệ và đa dạng trên bàn cờ từ seed kiểm soát, loại trừ hoàn toàn nước pass sớm.
+  - Cấu trúc ghép cặp trận đấu (Paired Matchups): Mỗi cặp khai cuộc được thi đấu đối xứng qua 2 ván cờ:
+    1. Candidate cầm Đen vs Baseline cầm Trắng từ chuỗi nước đi khai cuộc giống hệt nhau.
+    2. Baseline cầm Đen vs Candidate cầm Trắng từ chuỗi nước đi khai cuộc giống hệt nhau.
+  - Triệt tiêu phương sai vị thế khai cuộc và bảo đảm tính đối xứng tuyệt đối (`test_arena_score_is_symmetrical_on_model_swap`).
+  - Tắt hoàn toàn nhiễu Dirichlet và nước đi ngẫu nhiên sau khai cuộc (`temperature = 0.0`), đảm bảo sức mạnh mô hình được đánh giá thuần túy dựa trên chính sách MCTS tối ưu.
+- [x] **P5.2: Thống Kê Chi Tiết & Khoảng Tin Cậy Wilson 95%**:
+  - Đóng gói cấu trúc `PairedGameResult` và mở rộng `ArenaResult`: Lưu chi tiết kết quả từng cặp, số nước đi, người thắng theo màu cờ.
+  - Tích hợp tính toán khoảng tin cậy Wilson Score 95% (`win_rate_ci`): Đánh giá định lượng ý nghĩa thống kê của tỷ lệ thắng thay vì chỉ dựa vào ngưỡng điểm 55%.
+  - Bổ sung thông tin phân rã theo màu cờ (`candidate_as_black_wins`, `candidate_as_white_wins`) và khoảng tin cậy vào nhật ký tiến trình `main.py` và `latest_manifest.json`.
+- [x] **P5.3: Chuẩn Hóa Đối Thủ Chuẩn Cố Định (Fixed Baselines)**:
+  - Nâng cấp `RandomModel`: Ngăn chặn việc chọn nước pass ngẫu nhiên khi bàn cờ còn nhiều nước đi hợp lệ (`allow_early_pass=False`).
+  - Xây dựng mô hình chiến thuật `CaptureHeuristicModel`: Ưu tiên tuyệt đối các nước bắt quân atari, bảo vệ quân nguy cấp và phân phối đều trên bàn cờ, cung cấp một đối thủ đo lường khách quan không phụ thuộc vào trọng số checkpoint.
+- [x] **Toàn bộ 89/89 bài kiểm thử tự động đạt 100% PASS** trên toàn bộ 10 modules kiểm thử của dự án!
+
+

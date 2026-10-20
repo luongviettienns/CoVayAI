@@ -409,11 +409,19 @@ class AlphaZeroPipeline:
             cand_elo = self.elo_tracker.get_rating(cand_id)
             best_elo = self.elo_tracker.get_rating(self.current_best_id)
 
+            ci_str = ""
+            if arena_result.win_rate_ci:
+                ci_low, ci_high = arena_result.win_rate_ci
+                ci_str = f" [95% CI: {ci_low*100:.1f}% - {ci_high*100:.1f}%]"
+
             print(
                 f"    Result: {arena_result.candidate_wins}W - {arena_result.baseline_wins}L - {arena_result.draws}D "
-                f"({arena_result.candidate_win_rate * 100:.1f}%)"
+                f"({arena_result.candidate_win_rate * 100:.1f}%{ci_str})"
             )
-            print(f"    Candidate Elo: {cand_elo:.1f} | Best Elo: {best_elo:.1f}")
+            print(
+                f"    By Color: Black {arena_result.candidate_as_black_wins}W - White {arena_result.candidate_as_white_wins}W | "
+                f"Candidate Elo: {cand_elo:.1f} | Best Elo: {best_elo:.1f}"
+            )
 
             # 4. Model Promotion / Rollback with Optimizer Synchronization
             if arena_result.accepted:
@@ -514,6 +522,9 @@ class AlphaZeroPipeline:
             "policy_loss": avg_pi_loss,
             "value_loss": avg_v_loss,
             "arena_win_rate": win_rate,
+            "arena_win_rate_ci": arena_result.win_rate_ci if self.config.gating else None,
+            "arena_black_wins": arena_result.candidate_as_black_wins if self.config.gating else 0,
+            "arena_white_wins": arena_result.candidate_as_white_wins if self.config.gating else 0,
             "accepted": accepted,
             "candidate_elo": cand_elo,
             "best_elo": best_elo,

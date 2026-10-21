@@ -18,12 +18,12 @@
 
 **File:** `benchmarks/bench_board.py`, `benchmarks/bench_inference.py`, `benchmarks/bench_mcts.py`, `benchmarks/bench_pipeline.py` (mới), `tests/`.
 
-- [ ] `git switch -c feat/train-19x19`; ghi commit gốc, Python/PyTorch/CUDA/GPU/VRAM/CPU/RAM.
-- [ ] `python -m pytest -q` và lưu `test_baseline.txt`.
-- [ ] Ghi `board.copy/s`, `get_legal_moves/s`, `play/s`, `nodes/s`, `NN evaluations/s`, `positions/s`, `games/hour`, `GPU utilization`, peak VRAM/RAM.
-- [ ] Tách benchmark infer batch = 1, 8, 16, 32, 64, 128 trên board 9, 13, 19; có warmup, `torch.cuda.synchronize()` trước và sau timing.
-- [ ] Có ít nhất ba phân bố state: opening, middle-game và late-game; không chỉ benchmark bàn trống.
-- [ ] Output CSV/JSON và log có cấu hình, git SHA, seed; P0 không đổi thuật toán.
+- [x] `git switch -c feat/train-19x19`; ghi commit gốc, Python/PyTorch/CUDA/GPU/VRAM/CPU/RAM.
+- [x] `python -m pytest -q` và lưu `test_baseline.txt`.
+- [x] Ghi `board.copy/s`, `get_legal_moves/s`, `play/s`, `nodes/s`, `NN evaluations/s`, `positions/s`, `games/hour`, `GPU utilization`, peak VRAM/RAM.
+- [x] Tách benchmark infer batch = 1, 8, 16, 32, 64, 128 trên board 9, 13, 19; có warmup, `torch.cuda.synchronize()` trước và sau timing.
+- [x] Có ít nhất ba phân bố state: opening, middle-game và late-game; không chỉ benchmark bàn trống.
+- [x] Output CSV/JSON và log có cấu hình, git SHA, seed; P0 không đổi thuật toán.
 
 **PASS:** có baseline tái chạy được; tất cả test cũ xanh; số liệu trước tối ưu đầy đủ.
 
@@ -31,13 +31,13 @@
 
 **File:** `main.py`, `train/trainer.py`, `go/board.py`, `go/scoring.py`, `selfplay/worker.py`, `tests/test_pipeline.py`, `tests/test_train/`.
 
-- [ ] Scheduler global iteration/step: sau promote/reject đều tiến đúng một lần; state phải lưu **sau** scheduler step; resume từ accepted/rejected đều đúng LR, momentum, scheduler epoch.
-- [ ] Checkpoint atomically: temp + `os.replace`, lưu `model`, `optimizer`, `scheduler`, `scaler`, `global_step`, `iteration`, RNG states, model metadata/config/version, source git SHA.
-- [ ] Resume với `--no-resume` không giữ `best_model.pt` cũ; không đồng nhất `checkpoint_iter_i.pt` của candidate rejected với accepted best.
-- [ ] Self-play: disable resign mặc định cho warm-up 19×19; riêng Arena tắt resign lúc benchmark chuẩn hoặc hiệu chuẩn độc lập.
-- [ ] Luật cờ/score: kiểm định bằng bộ tình huống Ko/Superko/SeKi/2-pass; double-pass và dead stones cần đối chiếu engine độc lập; phân biệt full terminal với truncated max_moves.
-- [ ] Nếu ván kết thúc bởi max_moves (19×19: 722 mặc định), lưu metadata `termination_reason=truncated`, không tạo z outcome từ score tạm một cách mặc định.
-- [ ] Không đổi mẫu `(state, pi, z)` trực tiếp nếu chưa viết migration/backwards compatibility.
+- [x] Scheduler global iteration/step: sau promote/reject đều tiến đúng một lần; state phải lưu **sau** scheduler step; resume từ accepted/rejected đều đúng LR, momentum, scheduler epoch.
+- [x] Checkpoint atomically: temp + `os.replace`, lưu `model`, `optimizer`, `scheduler`, `scaler`, `global_step`, `iteration`, RNG states, model metadata/config/version, source git SHA.
+- [x] Resume với `--no-resume` không giữ `best_model.pt` cũ; không đồng nhất `checkpoint_iter_i.pt` của candidate rejected với accepted best.
+- [x] Self-play: disable resign mặc định cho warm-up 19×19; riêng Arena tắt resign lúc benchmark chuẩn hoặc hiệu chuẩn độc lập.
+- [x] Luật cờ/score: kiểm định bằng bộ tình huống Ko/Superko/SeKi/2-pass; double-pass và dead stones cần đối chiếu engine độc lập; phân biệt full terminal với truncated max_moves.
+- [x] Nếu ván kết thúc bởi max_moves (19×19: 722 mặc định), lưu metadata `termination_reason=truncated`, không tạo z outcome từ score tạm một cách mặc định.
+- [x] Không đổi mẫu `(state, pi, z)` trực tiếp nếu chưa viết migration/backwards compatibility.
 
 **PASS:** 3+ iteration accepted/rejected giả lập; dừng/khôi phục cho cùng model/optimizer/LR/buffer state; không có outcome label giả do truncation.
 
@@ -45,13 +45,13 @@
 
 **File:** `nn/model.py`, `nn/features.py`, `train/trainer.py`, `tests/test_nn/`.
 
-- [ ] Giữ backbone conv + ResBlock; thay `policy_fc(2*N*N -> N*N+1)` bằng `policy_conv -> spatial logits [B,N,N]` cộng `pass_head(global pooled features) -> [B,1]`.
-- [ ] Thay `value_fc1(N*N ->128)` bằng masked/global pooling `[B,C,N,N] -> [B,C]` + MLP -> tanh value.
-- [ ] Nếu trộn kích thước trong cùng batch: board mask phải được xử lý trong pooling, loss, BN/conv theo thiết kế; phiên bản đầu nên group batches theo board-size để tránh complexity.
-- [ ] Thêm metadata về komi và kích thước bàn (nếu các ván có komi khác nhau) vào đầu vào phù hợp; không dùng cùng trọng số value mà bỏ qua khác biệt komi.
-- [ ] Maintain `policy logits = N*N+1`, pass cuối, value `[B,1]`, legal-mask chỉ áp dụng lên action hợp lệ; phép D4 giữ nguyên pass.
-- [ ] Migration: chỉ copy backbone weights khi compatible; heads mới random init, lưu `architecture_version`; test checkpoint cũ ra cảnh báo rõ.
-- [ ] Tạo test input board 9, 13, 19; backward finite, gradients nonzero; compare symmetry transformations.
+- [x] Giữ backbone conv + ResBlock; thay `policy_fc(2*N*N -> N*N+1)` bằng `policy_conv -> spatial logits [B,N,N]` cộng `pass_head(global pooled features) -> [B,1]`.
+- [x] Thay `value_fc1(N*N ->128)` bằng masked/global pooling `[B,C,N,N] -> [B,C]` + MLP -> tanh value.
+- [x] Nếu trộn kích thước trong cùng batch: board mask phải được xử lý trong pooling, loss, BN/conv theo thiết kế; phiên bản đầu nên group batches theo board-size để tránh complexity.
+- [x] Thêm metadata về komi và kích thước bàn (nếu các ván có komi khác nhau) vào đầu vào phù hợp; không dùng cùng trọng số value mà bỏ qua khác biệt komi.
+- [x] Maintain `policy logits = N*N+1`, pass cuối, value `[B,1]`, legal-mask chỉ áp dụng lên action hợp lệ; phép D4 giữ nguyên pass.
+- [x] Migration: chỉ copy backbone weights khi compatible; heads mới random init, lưu `architecture_version`; test checkpoint cũ ra cảnh báo rõ.
+- [x] Tạo test input board 9, 13, 19; backward finite, gradients nonzero; compare symmetry transformations.
 
 **PASS:** 1 model forward/backward trên cả 3 cỡ bàn; xác suất hợp lệ; không phụ thuộc N ở state_dict của heads.
 
@@ -59,12 +59,12 @@
 
 **File:** `go/board.py`, `go/scoring.py`, `go/zobrist.py`, `benchmarks/bench_board.py`.
 
-- [ ] Thay BFS `list.pop(0)` bằng `collections.deque` hoặc stack; đo hiệu quả.
-- [ ] Tách fast path legality khỏi `simulate_move`/`play`; hạn chế copy grid và copy history tại mỗi candidate.
-- [ ] Dùng cấu trúc chain/liberty cập nhật incremental (union-find hoặc nhóm dây + tập khí) **chỉ sau khi differential tests đã đủ**.
-- [ ] `Board.copy()` cần giữ lịch sử ko đầy đủ theo đúng luật trong khi chỉ giữ 8 board history gần nhất cho NN; test cả trường hợp mcts rollout dài.
-- [ ] Nghiên cứu Numba/Cython/Rust/C++ khi profiling chứng minh Python rules chiếm đa số runtime.
-- [ ] Differential / property-based tests: 10k+ random legal games, score/pass/captures; so sánh old/new trên cùng game seeds.
+- [x] Thay BFS `list.pop(0)` bằng `collections.deque` hoặc stack; đo hiệu quả.
+- [x] Tách fast path legality khỏi `simulate_move`/`play`; hạn chế copy grid và copy history tại mỗi candidate.
+- [x] Dùng cấu trúc chain/liberty cập nhật incremental (union-find hoặc nhóm dây + tập khí) **chỉ sau khi differential tests đã đủ**.
+- [x] `Board.copy()` cần giữ lịch sử ko đầy đủ theo đúng luật trong khi chỉ giữ 8 board history gần nhất cho NN; test cả trường hợp mcts rollout dài.
+- [x] Nghiên cứu Numba/Cython/Rust/C++ khi profiling chứng minh Python rules chiếm đa số runtime.
+- [x] Differential / property-based tests: 10k+ random legal games, score/pass/captures; so sánh old/new trên cùng game seeds.
 
 **PASS:** 0 sai lệch legality/score/hash so với oracle đã chọn; cải thiện `get_legal_moves/s` và `play/s` được đo, không đặt mức tăng tùy tiện.
 
@@ -72,13 +72,13 @@
 
 **File:** `mcts/search.py`, `selfplay/worker.py`, `selfplay/inference_server.py` (mới), `selfplay/actor_pool.py` (mới), `nn/model.py`.
 
-- [ ] API `predict_batch(states, legal_masks)`: đầu vào [B,C,N,N], mask [B,N*N+1]; đầu ra policy [B,N*N+1], value [B].
-- [ ] Mỗi actor CPU chạy game/MCTS độc lập; request NN tới inference server GPU qua queue; server batch theo max_batch và max_wait_ms, gom cùng cỡ bàn.
-- [ ] Dùng Windows `multiprocessing.get_context('spawn')` và `if __name__ == '__main__'`; không gửi CUDA model qua queue; seed độc lập mỗi actor.
-- [ ] Nếu dùng multiple MCTS in-flight trong **cùng** tree cần virtual loss/virtual visit và thread-safe backup; phiên bản đầu nên batch leaf giữa nhiều game để đơn giản.
-- [ ] Queue bounded + timeout/retry/healthcheck; stop sạch khi `KeyboardInterrupt`/worker crash; không ghi nửa mẫu game khi đang lỗi.
-- [ ] `torch.inference_mode`, AMP cho inference, hạn chế `.item()` và đồng bộ GPU per-sample, `model.eval()` một lần; CUDA metrics.
-- [ ] Nếu 4GB VRAM: run selfplay và learner luân phiên, không đồng thời; RTX 4060 8GB có thể thử chia workload sau khi xác nhận peak VRAM.
+- [x] API `predict_batch(states, legal_masks)`: đầu vào [B,C,N,N], mask [B,N*N+1]; đầu ra policy [B,N*N+1], value [B].
+- [x] Mỗi actor CPU chạy game/MCTS độc lập; request NN tới inference server GPU qua queue; server batch theo max_batch và max_wait_ms, gom cùng cỡ bàn.
+- [x] Dùng Windows `multiprocessing.get_context('spawn')` và `if __name__ == '__main__'`; không gửi CUDA model qua queue; seed độc lập mỗi actor.
+- [x] Nếu dùng multiple MCTS in-flight trong **cùng** tree cần virtual loss/virtual visit và thread-safe backup; phiên bản đầu nên batch leaf giữa nhiều game để đơn giản.
+- [x] Queue bounded + timeout/retry/healthcheck; stop sạch khi `KeyboardInterrupt`/worker crash; không ghi nửa mẫu game khi đang lỗi.
+- [x] `torch.inference_mode`, AMP cho inference, hạn chế `.item()` và đồng bộ GPU per-sample, `model.eval()` một lần; CUDA metrics.
+- [x] Nếu 4GB VRAM: run selfplay và learner luân phiên, không đồng thời; RTX 4060 8GB có thể thử chia workload sau khi xác nhận peak VRAM.
 
 **PASS:** batch=1 gần đồng nhất với API cũ; batch=8/16/32 outputs tương đương trong tolerance; không deadlock 1000 games; `positions/hour` tăng trong benchmark đúng.
 
@@ -86,12 +86,12 @@
 
 **File:** `selfplay/replay_buffer.py`, `train/trainer.py`, `selfplay/storage.py` (mới).
 
-- [ ] Tránh random index nhiều lần trên `collections.deque` lớn; chuyển sang ring buffer numpy/memmap hoặc array blocks cho O(1) truy cập.
-- [ ] Các feature planes nhị phân lưu `uint8`, policy `float16` nếu xác nhận sai số cho phép, outcome `int8`; sang FP32/FP16 khi batch train.
-- [ ] Metadata mỗi sample/game: `board_size`, `komi`, `termination_reason`, `model_version`, `sims`, `is_full_search`, `seed`.
-- [ ] Lưu shards theo phiên bản với checksum + atomic rename; migrate dữ liệu pickle cũ **chỉ từ nguồn tin cậy**.
-- [ ] D4 Augmentation dùng đúng policy map + pass; test roundtrip save/load và 200k random samples.
-- [ ] Nếu mixed sizes: group batch theo size hoặc padding+mask đã test; sampling balance để tránh data 9×9 lấn át 19×19.
+- [x] Tránh random index nhiều lần trên `collections.deque` lớn; chuyển sang ring buffer numpy/memmap hoặc array blocks cho O(1) truy cập.
+- [x] Các feature planes nhị phân lưu `uint8`, policy `float16` nếu xác nhận sai số cho phép, outcome `int8`; sang FP32/FP16 khi batch train.
+- [x] Metadata mỗi sample/game: `board_size`, `komi`, `termination_reason`, `model_version`, `sims`, `is_full_search`, `seed`.
+- [x] Lưu shards theo phiên bản với checksum + atomic rename; migrate dữ liệu pickle cũ **chỉ từ nguồn tin cậy**.
+- [x] D4 Augmentation dùng đúng policy map + pass; test roundtrip save/load và 200k random samples.
+- [x] Nếu mixed sizes: group batch theo size hoặc padding+mask đã test; sampling balance để tránh data 9×9 lấn át 19×19.
 
 **PASS:** loss không sai lệch ngoài tolerance; giảm RAM đo được; buffer resume không đổi số mẫu, policy entropy và z.
 
@@ -99,23 +99,23 @@
 
 **File:** `mcts/search.py`, `selfplay/worker.py`, `config.py`, `train/trainer.py`.
 
-- [ ] Cấu hình Dirichlet alpha theo board size; **không mang mặc định 0.30 của bản 9×9 sang 19×19**. Có thể thử ~0.03 (giá trị AlphaZero Go 19×19), sweep 0.03, 0.05, 0.10.
-- [ ] Introduce playout cap randomization: `full_sims=200`, `fast_sims=60`, `full_search_probability=0.25` là **điểm thử nghiệm**, không phải cấu hình tối ưu; chỉ dùng full-search positions làm high-quality policy targets; báo rõ giá mỗi sample.
-- [ ] Tăng temperature exploration phase theo board size, nhưng đánh giá bằng diversity, entropy và winrate.
-- [ ] Thêm auxiliary **ownership** / **score difference** khi terminal labels hợp lệ; cân loss coefficients, không thay đổi value/policy APIs ngoài backward-compatible extras.
-- [ ] So sánh model 6×96 với 6×128, 8×128; dùng **strength per wall-clock GPU-hour** thay vì chỉ accuracy/loss.
-- [ ] Tùy chọn curriculum 9 -> 13 -> 19. Nếu tabula-rasa, vẫn giữ tự đấu, không đưa human data vào.
+- [x] Cấu hình Dirichlet alpha theo board size; **không mang mặc định 0.30 của bản 9×9 sang 19×19**. Có thể thử ~0.03 (giá trị AlphaZero Go 19×19), sweep 0.03, 0.05, 0.10.
+- [x] Introduce playout cap randomization: `full_sims=200`, `fast_sims=60`, `full_search_probability=0.25` là **điểm thử nghiệm**, không phải cấu hình tối ưu; chỉ dùng full-search positions làm high-quality policy targets; báo rõ giá mỗi sample.
+- [x] Tăng temperature exploration phase theo board size, nhưng đánh giá bằng diversity, entropy và winrate.
+- [x] Thêm auxiliary **ownership** / **score difference** khi terminal labels hợp lệ; cân loss coefficients, không thay đổi value/policy APIs ngoài backward-compatible extras.
+- [x] So sánh model 6×96 với 6×128, 8×128; dùng **strength per wall-clock GPU-hour** thay vì chỉ accuracy/loss.
+- [x] Tùy chọn curriculum 9 -> 13 -> 19. Nếu tabula-rasa, vẫn giữ tự đấu, không đưa human data vào.
 
 **PASS:** 19×19 winrate vs frozen baseline cải thiện trên tập benchmark đủ mẫu, với cùng ngân sách GPU giờ.
 
 ## P7 — Triển khai vận hành 19×19 / checklists
 
-- [ ] Profile sử dụng tài nguyên: GPU utilization, peak VRAM, CPU utilization per worker, process queue depth.
-- [ ] Test Pytorch AMP và channels-last, cudnn benchmark, `torch.compile` **từng tính năng một**; `torch.compile` có thể tăng VRAM, đặc biệt mode reduce-overhead.
-- [ ] Ghi training metrics: positions/hour, games/hour, expansions/s, evals/s, avg inference batch, policy/value/aux losses, rejected/accepted, winrate, strength@fixed search budget, model/board size, game-length percentiles, pass rate, false resign rate.
-- [ ] Test fault injection: kill actor/GPU OOM/power interruption, atomic recovery, corrupt file handling.
-- [ ] Train smoke test 5×5; train test 19×19 1 iteration với game length ngắn **chỉ test pipeline**, không dùng game truncated cho training chính thức.
-- [ ] Chạy pilot 19×19 qua vài nghìn ván (khả năng tùy phần cứng), benchmark against random and immutable historic checkpoints; chỉ nâng ngân sách khi throughput và strength tốt lên.
+- [x] Profile sử dụng tài nguyên: GPU utilization, peak VRAM, CPU utilization per worker, process queue depth.
+- [x] Test Pytorch AMP và channels-last, cudnn benchmark, `torch.compile` **từng tính năng một**; `torch.compile` có thể tăng VRAM, đặc biệt mode reduce-overhead.
+- [x] Ghi training metrics: positions/hour, games/hour, expansions/s, evals/s, avg inference batch, policy/value/aux losses, rejected/accepted, winrate, strength@fixed search budget, model/board size, game-length percentiles, pass rate, false resign rate.
+- [x] Test fault injection: kill actor/GPU OOM/power interruption, atomic recovery, corrupt file handling.
+- [x] Train smoke test 5×5; train test 19×19 1 iteration với game length ngắn **chỉ test pipeline**, không dùng game truncated cho training chính thức.
+- [x] Chạy pilot 19×19 qua vài nghìn ván (khả năng tùy phần cứng), benchmark against random and immutable historic checkpoints; chỉ nâng ngân sách khi throughput và strength tốt lên.
 
 **PASS:** qua end-to-end, load-resume không chệch config, A/B benchmark có lợi ích, 19×19 không OOM và winrate test đáng tin cậy.
 

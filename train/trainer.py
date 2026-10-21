@@ -2,6 +2,9 @@
 
 from typing import Dict, Optional, Tuple, List
 import os
+import random
+import subprocess
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,6 +27,7 @@ class Trainer:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.use_amp = use_amp and (self.device.type == "cuda")
+        self.global_step: int = 0
 
         # Separate parameters into 2D/4D (weights: Conv, Linear) and 1D (biases, BatchNorm)
         decay_params = []
@@ -98,6 +102,7 @@ class Trainer:
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.scaler.step(self.optimizer)
         self.scaler.update()
+        self.global_step += 1
 
         return {
             "total_loss": float(total_loss.item()),
@@ -155,14 +160,46 @@ class Trainer:
             "value_loss": value_loss_accum / steps,
         }
 
-    def save_checkpoint(self, filepath: str, iteration: int = 0, extra: Optional[dict] = None) -> None:
-        """Save model, optimizer, and scheduler state to file."""
+    def save_checkpoint(
+        self,
+        filepath: str,
+        iteration: int = 0,
+        extra: Optional[dict] = None,
+    ) -> None:
+        """Save model, optimizer, scheduler, scaler, RNG states, and git SHA atomically to file."""
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+
+        try:
+            git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+        except Exception:
+            git_sha = "unknown"
+
+        numpy_rng = np.random.get_state()
+        clean_numpy_rng = (
+            numpy_rng[0],
+            numpy_rng[1].tolist() if isinstance(numpy_rng[1], np.ndarray) else numpy_rng[1],
+            numpy_rng[2],
+            numpy_rng[3],
+            numpy_rng[4],
+        )
+
+        rng_states = {
+            "random": random.getstate(),
+            "numpy": clean_numpy_rng,
+            "torch": torch.get_rng_state().cpu(),
+        }
+        if torch.cuda.is_available() and self.device.type == "cuda":
+            rng_states["torch_cuda"] = [s.cpu() for s in torch.cuda.get_rng_state_all()]
+
         checkpoint = {
             "iteration": iteration,
+            "global_step": self.global_step,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
+            "scaler_state_dict": self.scaler.state_dict(),
+            "rng_states": rng_states,
+            "git_sha": git_sha,
         }
         if extra:
             checkpoint.update(extra)
@@ -171,10 +208,42 @@ class Trainer:
         os.replace(tmp_path, filepath)
 
     def load_checkpoint(self, filepath: str) -> int:
-        """Load model, optimizer, and scheduler state from file and return saved iteration."""
-        checkpoint = torch.load(filepath, map_location=self.device)
+        """Load model, optimizer, scheduler, scaler, and RNG state from file and return saved iteration."""
+        checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if "scheduler_state_dict" in checkpoint:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        if "scaler_state_dict" in checkpoint:
+            self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        if "global_step" in checkpoint:
+            self.global_step = checkpoint["global_step"]
+        if "rng_states" in checkpoint:
+            rng = checkpoint["rng_states"]
+            if "random" in rng:
+                random.setstate(rng["random"])
+            if "numpy" in rng:
+                nrng = rng["numpy"]
+                if isinstance(nrng, (list, tuple)) and len(nrng) == 5:
+                    reconstructed = (
+                        nrng[0],
+                        np.array(nrng[1], dtype=np.uint32) if isinstance(nrng[1], list) else nrng[1],
+                        nrng[2],
+                        nrng[3],
+                        nrng[4],
+                    )
+                    np.random.set_state(reconstructed)
+                else:
+                    np.random.set_state(nrng)
+            if "torch" in rng:
+                torch_state = rng["torch"]
+                if isinstance(torch_state, torch.Tensor):
+                    torch_state = torch_state.cpu()
+                torch.set_rng_state(torch_state)
+            if "torch_cuda" in rng and torch.cuda.is_available() and self.device.type == "cuda":
+                cuda_states = rng["torch_cuda"]
+                if isinstance(cuda_states, list):
+                    cuda_states = [s.cpu() if isinstance(s, torch.Tensor) else s for s in cuda_states]
+                torch.cuda.set_rng_state_all(cuda_states)
+
         return checkpoint.get("iteration", 0)

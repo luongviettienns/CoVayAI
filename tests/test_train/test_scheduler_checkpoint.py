@@ -220,3 +220,106 @@ def test_config_validation_bounds():
     with pytest.raises(ValueError, match="arena_games"):
         PipelineConfig(arena_games=0).validate()
 
+
+def test_checkpoint_includes_all_required_components():
+    """Verify checkpoint contains scaler, global_step, rng_states, git_sha, and metadata."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = PipelineConfig(
+            board_size=5,
+            num_res_blocks=1,
+            num_filters=16,
+            num_sims=2,
+            games_per_iter=1,
+            train_steps=2,
+            batch_size=4,
+            arena_games=2,
+            checkpoint_dir=tmpdir,
+            device="cpu",
+            progress_bar=False,
+            resume=False,
+            max_moves=2,
+        )
+        pipeline = AlphaZeroPipeline(config)
+        pipeline.run_iteration(iteration=1)
+
+        ckpt_path = os.path.join(tmpdir, "checkpoint_iter_1.pt")
+        assert os.path.exists(ckpt_path)
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+
+        # Required components per PR 2 specification
+        assert "model_state_dict" in ckpt
+        assert "optimizer_state_dict" in ckpt
+        assert "scheduler_state_dict" in ckpt
+        assert "scaler_state_dict" in ckpt
+        assert "global_step" in ckpt
+        assert ckpt["global_step"] >= 2
+        assert "rng_states" in ckpt
+        assert "random" in ckpt["rng_states"]
+        assert "numpy" in ckpt["rng_states"]
+        assert "torch" in ckpt["rng_states"]
+        assert "git_sha" in ckpt
+        assert "board_size" in ckpt
+
+
+def test_rejected_candidate_checkpoint_preserves_candidate_weights():
+    """Verify that when candidate is rejected, checkpoint_iter_i.pt retains candidate's trained weights."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = PipelineConfig(
+            board_size=5,
+            num_res_blocks=1,
+            num_filters=16,
+            num_sims=2,
+            games_per_iter=1,
+            train_steps=5,
+            batch_size=4,
+            arena_games=2,
+            checkpoint_dir=tmpdir,
+            device="cpu",
+            progress_bar=False,
+            resume=False,
+            max_moves=2,
+        )
+        pipeline = AlphaZeroPipeline(config)
+
+        # Force candidate to train significantly away from initial weights
+        # Mock arena to REJECT candidate
+        pipeline.arena.evaluate = MagicMock(return_value=ArenaResult(
+            candidate_wins=0, baseline_wins=2, draws=0,
+            candidate_win_rate=0.0, games_played=2, accepted=False
+        ))
+
+        pipeline.run_iteration(iteration=1)
+
+        iter_ckpt = torch.load(os.path.join(tmpdir, "checkpoint_iter_1.pt"), map_location="cpu", weights_only=False)
+        best_ckpt = torch.load(os.path.join(tmpdir, "best_model.pt"), map_location="cpu", weights_only=False)
+
+        assert iter_ckpt["accepted"] is False
+        assert best_ckpt["iteration"] == 0
+
+        # Candidate weights must reflect training, NOT overwritten with best_model
+        cand_p_fc = iter_ckpt["model_state_dict"]["policy_fc.weight"]
+        best_p_fc = best_ckpt["model_state_dict"]["policy_fc.weight"]
+        assert not torch.allclose(cand_p_fc, best_p_fc), "Rejected candidate checkpoint was improperly overwritten with old best_model!"
+
+
+def test_no_resume_force_new_cleans_old_best_model():
+    """Verify that --no-resume with force_new resets existing best_model.pt on disk."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        old_best_path = os.path.join(tmpdir, "best_model.pt")
+        torch.save({"iteration": 99, "model_state_dict": {}}, old_best_path)
+
+        cfg_force = PipelineConfig(
+            board_size=5,
+            checkpoint_dir=tmpdir,
+            resume=False,
+            force_new=True,
+            device="cpu",
+        )
+        pipeline = AlphaZeroPipeline(cfg_force)
+        assert pipeline.start_iteration == 1
+
+        # best_model.pt on disk must be reset to iteration 0, not keep iteration 99
+        new_best = torch.load(old_best_path, map_location="cpu")
+        assert new_best["iteration"] == 0
+
+

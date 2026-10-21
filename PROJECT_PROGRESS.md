@@ -324,3 +324,24 @@
 - [x] **Cổng Nghiệm Thu P0 Đạt PASS Tuyệt Đối**:
   - Có baseline tái chạy được độc lập với đầy đủ file log, CSV, JSON trong `benchmarks/results/`.
   - 100% 96/96 test suite tiếp tục PASS xanh không một lỗi hồi quy.
+
+### Phase 20: Lộ Trình 19×19 — PR 2: Đồng Bộ Hóa Checkpoint Resume & LR Scheduler (Phase P1) [HOÀN THÀNH - 99/99 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_train/test_scheduler_checkpoint.py`)**:
+  - Viết 3 bài test hồi quy mới:
+    - `test_checkpoint_includes_all_required_components`: Kiểm tra checkpoint phải lưu đủ scaler, global_step, rng_states, git_sha, và kiến trúc bàn cờ.
+    - `test_rejected_candidate_checkpoint_preserves_candidate_weights`: Khắc phục lỗi candidate bị reject bị ghi đè trọng số best_model cũ vào file checkpoint iteration.
+    - `test_no_resume_force_new_cleans_old_best_model`: Xác minh `--no-resume --force-new` reset triệt để `best_model.pt` cũ trên đĩa.
+  - Xác nhận chạy FAIL đỏ trước khi sửa và PASS xanh 100% sau khi sửa.
+- [x] **Cải Tiến Checkpoint Nguyên Tử & Bền Vững (`train/trainer.py`)**:
+  - Bổ sung `self.global_step`: Theo dõi số bước tối ưu gradient lũy kế qua các iteration.
+  - Lưu và nạp toàn diện:
+    - `scaler_state_dict`: Bảo toàn trạng thái GradScaler FP16.
+    - `global_step`: Tránh reset bộ đếm bước tối ưu khi resume.
+    - `rng_states`: Lưu vết đầy đủ trạng thái sinh số ngẫu nhiên (`random`, `numpy` primitive tuple, `torch` CPU ByteTensor, `torch_cuda`).
+    - `git_sha`: Truy vết chính xác commit mã nguồn tạo ra checkpoint.
+- [x] **Đồng Bộ Thứ Tự Bước Scheduler & Lưu Checkpoint (`main.py`)**:
+  - Đưa lệnh `self.trainer.step_scheduler()` lên thực hiện **trước** khi ghi checkpoint, đảm bảo cả `checkpoint_iter_{i}.pt`, `best_model.pt` và `latest_manifest.json` đều lưu trạng thái scheduler hậu kỳ chuẩn xác.
+  - Lưu `checkpoint_iter_{iteration}.pt` ngay sau khi đấu Arena, giữ nguyên vẹn trọng số đã train của Candidate (kèm cờ `accepted=False`) trước khi rollback bộ nhớ về `best_model`.
+  - Xử lý sạch `--no-resume --force-new`: Khởi tạo lại `best_model.pt` về iteration 0 với đầy đủ metadata thay vì giữ lại checkpoint cũ.
+- [x] **Toàn Bộ 99/99 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Không có bất kỳ lỗi hồi quy nào trên toàn bộ 11 module kiểm thử của hệ thống.

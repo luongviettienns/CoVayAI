@@ -285,15 +285,36 @@ class AlphaZeroPipeline:
                 self._sync_optimizer_lr_with_scheduler()
                 print(f"[+] Loaded baseline weights from {best_model_path} (Model ID: {self.current_best_id}, Elo: {self.elo_tracker.get_rating(self.current_best_id):.1f})")
 
-        # Always ensure best_model.pt exists on disk as baseline
-        if not os.path.exists(best_model_path):
+        # Always ensure best_model.pt exists on disk as baseline (reset if force_new with no-resume)
+        if not self.config.resume and self.config.force_new:
             _atomic_torch_save(
                 {
                     "iteration": 0,
                     "model_state_dict": self.best_model.state_dict(),
                     "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
                     "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
+                    "scaler_state_dict": self.trainer.scaler.state_dict(),
+                    "global_step": 0,
                     "elo": 1000.0,
+                    "board_size": self.config.board_size,
+                    "num_res_blocks": self.config.num_res_blocks,
+                    "num_filters": self.config.num_filters,
+                },
+                best_model_path,
+            )
+        elif not os.path.exists(best_model_path):
+            _atomic_torch_save(
+                {
+                    "iteration": 0,
+                    "model_state_dict": self.best_model.state_dict(),
+                    "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
+                    "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
+                    "scaler_state_dict": self.trainer.scaler.state_dict(),
+                    "global_step": 0,
+                    "elo": 1000.0,
+                    "board_size": self.config.board_size,
+                    "num_res_blocks": self.config.num_res_blocks,
+                    "num_filters": self.config.num_filters,
                 },
                 best_model_path,
             )
@@ -423,56 +444,22 @@ class AlphaZeroPipeline:
                 f"Candidate Elo: {cand_elo:.1f} | Best Elo: {best_elo:.1f}"
             )
 
-            # 4. Model Promotion / Rollback with Optimizer Synchronization
-            if arena_result.accepted:
-                print(f"    [+] Candidate ACCEPTED! (Winrate {arena_result.candidate_win_rate*100:.1f}% >= {self.config.win_threshold*100:.1f}%)")
-                self.best_model.load_state_dict(self.candidate_model.state_dict())
-                self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
-                self.current_best_id = cand_id
-                _atomic_torch_save(
-                    {
-                        "iteration": iteration,
-                        "model_state_dict": self.best_model.state_dict(),
-                        "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
-                        "elo": cand_elo,
-                    },
-                    best_model_path,
-                )
-            else:
-                print(f"    [-] Candidate REJECTED. (Winrate {arena_result.candidate_win_rate*100:.1f}% < {self.config.win_threshold*100:.1f}%)")
-                # Rollback candidate weights AND optimizer momentum; global scheduler is NOT rolled back
-                self.candidate_model.load_state_dict(self.best_model.state_dict())
-                self.trainer.optimizer.load_state_dict(copy.deepcopy(self.best_optimizer_state))
-                self._sync_optimizer_lr_with_scheduler()
-
             win_rate = arena_result.candidate_win_rate
             accepted = arena_result.accepted
         else:
             # Continuous AlphaZero (2018): promote candidate directly without gating
             print("    [*] Gating disabled (Continuous AlphaZero training): Candidate promoted directly.")
-            self.best_model.load_state_dict(self.candidate_model.state_dict())
-            self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
-            self.current_best_id = cand_id
             cand_elo = self.elo_tracker.get_rating(self.current_best_id)
             best_elo = cand_elo
-            _atomic_torch_save(
-                {
-                    "iteration": iteration,
-                    "model_state_dict": self.best_model.state_dict(),
-                    "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
-                    "elo": cand_elo,
-                },
-                best_model_path,
-            )
             win_rate = 1.0
             accepted = True
 
-        # Step LR Scheduler after each iteration
+        # 4. Step LR Scheduler after each iteration (before saving checkpoints)
         current_lr = self.trainer.step_scheduler()
         self.best_scheduler_state = copy.deepcopy(self.trainer.scheduler.state_dict())
         print(f"    [*] Learning Rate: {current_lr:.6f}")
 
-        # Save iteration checkpoint atomically
+        # 5. Save iteration checkpoint atomically (capturing candidate's trained weights & post-step scheduler)
         iter_ckpt_path = os.path.join(
             self.config.checkpoint_dir, f"checkpoint_iter_{iteration}.pt"
         )
@@ -485,8 +472,39 @@ class AlphaZeroPipeline:
                 "candidate_elo": cand_elo,
                 "best_elo": best_elo,
                 "lr": current_lr,
+                "board_size": self.config.board_size,
+                "num_res_blocks": self.config.num_res_blocks,
+                "num_filters": self.config.num_filters,
             },
         )
+
+        # 6. Model Promotion / Rollback with Optimizer Synchronization
+        if accepted:
+            print(f"    [+] Candidate ACCEPTED! (Winrate {win_rate*100:.1f}% >= {self.config.win_threshold*100:.1f}%)")
+            self.best_model.load_state_dict(self.candidate_model.state_dict())
+            self.best_optimizer_state = copy.deepcopy(self.trainer.optimizer.state_dict())
+            self.current_best_id = cand_id
+            _atomic_torch_save(
+                {
+                    "iteration": iteration,
+                    "model_state_dict": self.best_model.state_dict(),
+                    "optimizer_state_dict": copy.deepcopy(self.best_optimizer_state),
+                    "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
+                    "scaler_state_dict": self.trainer.scaler.state_dict(),
+                    "global_step": self.trainer.global_step,
+                    "elo": cand_elo,
+                    "board_size": self.config.board_size,
+                    "num_res_blocks": self.config.num_res_blocks,
+                    "num_filters": self.config.num_filters,
+                },
+                best_model_path,
+            )
+        else:
+            print(f"    [-] Candidate REJECTED. (Winrate {win_rate*100:.1f}% < {self.config.win_threshold*100:.1f}%)")
+            # Rollback candidate weights AND optimizer momentum in memory; global scheduler is NOT rolled back
+            self.candidate_model.load_state_dict(self.best_model.state_dict())
+            self.trainer.optimizer.load_state_dict(copy.deepcopy(self.best_optimizer_state))
+            self._sync_optimizer_lr_with_scheduler()
 
         # Save Elo state atomically
         ratings_path = os.path.join(self.config.checkpoint_dir, "ratings.json")
@@ -498,6 +516,7 @@ class AlphaZeroPipeline:
             "schema_version": 1,
             "run_id": self.run_id,
             "iteration": iteration,
+            "global_step": self.trainer.global_step,
             "board_size": self.config.board_size,
             "num_filters": self.config.num_filters,
             "num_res_blocks": self.config.num_res_blocks,
@@ -506,9 +525,10 @@ class AlphaZeroPipeline:
             "best_model_id": self.current_best_id,
             "best_model_path": "best_model.pt",
             "checkpoint_path": f"checkpoint_iter_{iteration}.pt",
+            "candidate_accepted": accepted,
             "buffer_path": "buffer.pkl",
             "ratings_path": "ratings.json",
-            "scheduler_state_dict": copy.deepcopy(self.trainer.scheduler.state_dict()),
+            "scheduler_state_dict": copy.deepcopy(self.best_scheduler_state),
             "timestamp": time.time(),
         }
         _atomic_json_save(manifest_data, manifest_path)

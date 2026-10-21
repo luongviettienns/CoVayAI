@@ -4,11 +4,14 @@ from typing import Dict, Optional, Tuple, List, Any
 import os
 import random
 import subprocess
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from selfplay.replay_buffer import ReplayBuffer
+
+logger = logging.getLogger(__name__)
 
 
 def compute_adaptive_train_steps(

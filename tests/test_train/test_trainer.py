@@ -81,3 +81,18 @@ def test_trainer_save_and_load_checkpoint():
     finally:
         if os.path.exists(ckpt_path):
             os.remove(ckpt_path)
+
+
+def test_trainer_compile_model_and_channels_last():
+    """Verify Trainer handles compile_model and channels_last without NameError or unhandled exceptions."""
+    device = torch.device("cpu")
+    model = AlphaZeroNet(board_size=9, num_res_blocks=1, num_filters=16)
+    trainer = Trainer(
+        model=model,
+        channels_last=True,
+        compile_model=True,
+        device=device,
+    )
+    assert trainer.channels_last is True
+    # is_compiled can be True (if torch.compile supported) or False (graceful fallback)
+    assert isinstance(trainer.is_compiled, bool)

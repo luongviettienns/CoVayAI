@@ -718,5 +718,6 @@
 ### Release v1.1.0: 19×19 Cost-Optimized Production Ready [HOÀN THÀNH]
 - [x] Đã hợp nhất hoàn tất nhánh `feat/19x19-training-v4` vào `main`.
 - [x] Đóng gói và gắn tag release chính thức `v1.1.0`.
-- [x] Toàn bộ 199/199 bài kiểm thử đơn vị, tích hợp và hồi quy vượt qua 100% trên nhánh `main`.
+- [x] Khắc phục triệt để lỗi thiếu khai báo `logger` trong `train/trainer.py` khi khởi tạo `Trainer(compile_model=True)` kèm test hồi quy.
+- [x] Toàn bộ 200/200 bài kiểm thử đơn vị, tích hợp và hồi quy vượt qua 100% trên nhánh `main`.
 - [x] Web Arena daemon trên cổng `8080` duy trì hoạt động liên tục, sẵn sàng phục vụ.

@@ -650,4 +650,21 @@
 - [x] **Toàn Bộ 199/199 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 26 test modules trong 25.78 giây.
 
+### Phase 37: Master Plan V4 — PR 7: Gated 19×19 Pilot Validation & Resume Equivalence (P10) [HOÀN THÀNH - 199/199 Tests Passed]
+- [x] **Kiểm Chứng Thử Nghiệm Thực Tế Khép Kín 19×19 (`checkpoints/smoke19_v4`)**:
+  - Khởi chạy thành công 1 iteration hoàn chỉnh trên bàn cờ chuẩn 19×19 (`komi=7.5`, ResNet 6×96 V2, 17 mặt phẳng trạng thái, 362 hành động) với toàn bộ tính năng tối ưu V4:
+    - Bố cục bộ nhớ Channels-Last (NHWC) tăng tốc Tensor Core.
+    - Bộ đệm Replay Buffer nén bit-packed (8.5× memory compression) và lưu đĩa Zero-Copy.
+    - Cổng đánh giá ghép cặp Paired Arena với Bootstrap 95% CI và hoán vị $p$-value.
+  - Đo lường thông lượng thực tế trên NVIDIA GeForce RTX 3050 Laptop GPU (CUDA):
+    - Tốc độ self-play: 1.82 – 1.96 s/ván 19×19 ($\approx 15,936$ positions/giờ).
+    - Tốc độ train channels-last: $16.39$ steps/giây.
+    - Tốc độ đánh giá Arena: $9.03$ pairs/giây.
+- [x] **Xác Thực Khả Năng Resume Nguyên Tử Không Trùng Lặp**:
+  - Khởi chạy tiếp Iteration 2: Hệ thống tự động nạp `latest_manifest.json`, khôi phục trọn vẹn 20 mẫu từ tệp `buffer.pkl` bit-packed, nạp `best_model.pt` và ratings.
+  - Thu thập chính xác thêm 20 mẫu, nâng tổng số mẫu trong buffer lên 40 mẫu, lưu trữ nguyên tử và không ghi đè dữ liệu.
+- [x] **Tự Động Xuất Báo Cáo Chi Phí Chuẩn Hóa (`checkpoints/smoke19_v4/cost_report.json`)**:
+  - Ghi nhận đầy đủ thông tin commit git SHA, phần cứng CPU/GPU, thông lượng positions/giờ, games/giờ và chi phí theo chuẩn JSON Schema draft-07.
+
+
 

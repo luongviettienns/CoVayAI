@@ -38,6 +38,11 @@ class ArenaResult:
     candidate_as_white_wins: int = 0
     paired_results: Optional[List[PairedGameResult]] = None
     win_rate_ci: Optional[Tuple[float, float]] = None
+    pair_bootstrap_ci: Optional[Tuple[float, float]] = None
+    paired_p_value: Optional[float] = None
+    candidate_as_black_win_rate: float = 0.0
+    candidate_as_white_win_rate: float = 0.0
+    avg_moves: float = 0.0
 
 
 def compute_wilson_score_interval(
@@ -54,6 +59,81 @@ def compute_wilson_score_interval(
     ci_low = max(0.0, float(centre - spread))
     ci_high = min(1.0, float(centre + spread))
     return ci_low, ci_high
+
+
+def compute_paired_bootstrap_ci(
+    pair_scores: List[float],
+    num_bootstraps: int = 1000,
+    confidence: float = 0.95,
+    seed: Optional[int] = None,
+) -> Tuple[float, float]:
+    """
+    Calculate confidence interval using non-parametric bootstrap resampling over pairs.
+    Directly accounts for intra-pair correlation in paired openings.
+
+    Args:
+        pair_scores: List of candidate points per pair in [0.0, 2.0].
+        num_bootstraps: Number of bootstrap iterations.
+        confidence: Confidence level (default 0.95).
+        seed: Optional RNG seed.
+
+    Returns:
+        (ci_low, ci_high) in normalized range [0.0, 1.0].
+    """
+    if not pair_scores:
+        return 0.0, 1.0
+
+    n_pairs = len(pair_scores)
+    norm_scores = np.asarray(pair_scores, dtype=np.float64) / 2.0
+
+    if np.all(norm_scores == norm_scores[0]):
+        val = float(norm_scores[0])
+        return val, val
+
+    rng = np.random.RandomState(seed) if seed is not None else np.random
+    indices = rng.randint(0, n_pairs, size=(num_bootstraps, n_pairs))
+    resampled_means = np.mean(norm_scores[indices], axis=1)
+
+    alpha = (1.0 - confidence) / 2.0
+    ci_low = float(np.percentile(resampled_means, 100.0 * alpha))
+    ci_high = float(np.percentile(resampled_means, 100.0 * (1.0 - alpha)))
+    return max(0.0, ci_low), min(1.0, ci_high)
+
+
+def compute_paired_permutation_test(
+    pair_scores: List[float],
+    null_mean: float = 1.0,
+    num_permutations: int = 2000,
+    seed: Optional[int] = None,
+) -> float:
+    """
+    Calculate exact non-parametric one-sided p-value against null hypothesis H0 (equal strength).
+    Under H0, for each pair i, swapping the models is equivalent to replacing S_i with (2.0 - S_i).
+
+    Args:
+        pair_scores: List of candidate points per pair in [0.0, 2.0].
+        null_mean: Expected mean pair score under H0 (1.0 out of 2.0).
+        num_permutations: Number of permutation resamples.
+        seed: Optional RNG seed.
+
+    Returns:
+        one-sided p-value in [0.0, 1.0].
+    """
+    if not pair_scores:
+        return 1.0
+
+    scores = np.asarray(pair_scores, dtype=np.float64)
+    n_pairs = len(scores)
+    obs_mean = float(np.mean(scores))
+
+    rng = np.random.RandomState(seed) if seed is not None else np.random
+    diffs = scores - null_mean
+    signs = rng.choice([-1.0, 1.0], size=(num_permutations, n_pairs))
+    perm_diff_means = np.mean(signs * diffs, axis=1)
+    obs_diff_mean = obs_mean - null_mean
+
+    p_value = float(np.mean(perm_diff_means >= obs_diff_mean))
+    return max(0.0, min(1.0, p_value))
 
 
 def generate_opening_sequence(
@@ -401,6 +481,17 @@ class Arena:
         accepted = candidate_win_rate >= self.win_threshold
         win_rate_ci = compute_wilson_score_interval(candidate_win_rate, total_games)
 
+        total_pairs = len(paired_results)
+        cand_b_wr = (cand_as_black_wins / total_pairs) if total_pairs > 0 else 0.0
+        cand_w_wr = (cand_as_white_wins / total_pairs) if total_pairs > 0 else 0.0
+
+        pair_scores = [p.cand_pair_score for p in paired_results]
+        pair_bootstrap_ci = compute_paired_bootstrap_ci(pair_scores, seed=base_seed)
+        paired_p_value = compute_paired_permutation_test(pair_scores, seed=base_seed)
+
+        total_moves = sum(p.cand_as_black_moves + p.cand_as_white_moves for p in paired_results)
+        avg_moves = (total_moves / total_games) if total_games > 0 else 0.0
+
         return ArenaResult(
             candidate_wins=candidate_wins,
             baseline_wins=baseline_wins,
@@ -412,4 +503,9 @@ class Arena:
             candidate_as_white_wins=cand_as_white_wins,
             paired_results=paired_results,
             win_rate_ci=win_rate_ci,
+            pair_bootstrap_ci=pair_bootstrap_ci,
+            paired_p_value=paired_p_value,
+            candidate_as_black_win_rate=cand_b_wr,
+            candidate_as_white_win_rate=cand_w_wr,
+            avg_moves=avg_moves,
         )

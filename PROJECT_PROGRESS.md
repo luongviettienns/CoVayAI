@@ -631,3 +631,23 @@
 - [x] **Toàn Bộ 192/192 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 25 test modules trong 23.24 giây.
 
+### Phase 36: Master Plan V4 — PR 6: Paired Confidence-Aware 19×19 Evaluation & Fixed Baselines (P9) [HOÀN THÀNH - 199/199 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_arena/test_arena_statistics.py`)**:
+  - Xây dựng 7 bài kiểm thử chuyên sâu về thống kê đối kháng ghép cặp và đối chuẩn cố định:
+    - `test_paired_bootstrap_ci_extreme_cases`: Kiểm chứng thuật toán Bootstrap tái chọn mẫu theo cặp (Paired Bootstrap CI) xử lý chuẩn xác các trường hợp biên tuyệt đối (thắng tuyệt đối `[1.0, 1.0]`, thua tuyệt đối `[0.0, 0.0]`, hòa tuyệt đối `[0.5, 0.5]`).
+    - `test_paired_bootstrap_ci_nominal`: Kiểm chứng độ bao phủ khoảng tin cậy 95% Bootstrap phản ánh đúng tương quan trong từng cặp khai cuộc đối xứng (intra-pair opening correlation), khắc phục nhược điểm giả định độc lập sai của Wilson score.
+    - `test_paired_permutation_test_significance`: Kiểm chứng phép thử hoán vị phi tham số (non-parametric paired permutation test) tính toán chính xác giá trị $p$-value một phía đối với giả thuyết $H_0$ (hai mô hình ngang sức), phân biệt rõ rệt giữa mô hình áp đảo ($p < 0.005$) và mô hình ngang sức ($p > 0.20$).
+    - `test_arena_paired_confidence_interval_and_color_bias`: Kiểm chứng `Arena.evaluate()` tự động tích hợp Bootstrap CI 95%, giá trị hoán vị $p$-value và phân rã chi tiết tỷ lệ thắng theo màu cờ (`candidate_as_black_win_rate`, `candidate_as_white_win_rate`) để phát hiện độ lệch komi hoặc thiên kiến màu quân trên bàn cờ 19×19.
+    - `test_fixed_baseline_evaluator_against_random`: Kiểm chứng bộ đánh giá đối thủ chuẩn `FixedBaselineEvaluator` thi đấu ghép cặp với `RandomModel` và xuất báo cáo `BaselineEvaluationReport`.
+    - `test_fixed_baseline_evaluator_against_capture_heuristic`: Kiểm chứng đánh giá đối thủ chiến thuật `CaptureHeuristicModel` và kiểm tra độ nhạy bắt quân atari.
+    - `test_detect_strength_regression`: Kiểm chứng cơ chế phát hiện suy giảm sức chơi (`check_regression`), phát cảnh báo an toàn khi tỷ lệ thắng trước chuẩn đối chiếu cố định tụt xuống dưới ngưỡng an toàn cấu hình.
+- [x] **Mô-đun Thống Kê Đối Kháng & Đánh Giá Đối Thủ Chuẩn Cố Định (`arena/match.py`, `arena/evaluation.py`, `arena/__init__.py`)**:
+  - Bổ sung hàm thống kê `compute_paired_bootstrap_ci` và `compute_paired_permutation_test` trong `arena/match.py`.
+  - Mở rộng cấu trúc dữ liệu `ArenaResult`: Thêm các trường `pair_bootstrap_ci`, `paired_p_value`, `candidate_as_black_win_rate`, `candidate_as_white_win_rate`, `avg_moves`.
+  - Xây dựng lớp `FixedBaselineEvaluator` và cấu trúc `BaselineEvaluationReport` trong `arena/evaluation.py`, cung cấp các phương thức `evaluate_against_random`, `evaluate_against_capture_heuristic`, `evaluate_against_frozen_checkpoint` và `check_regression`.
+- [x] **Cập Nhật Giao Diện & Báo Cáo Tiến Trình (`main.py`)**:
+  - Nâng cấp hiển thị kết quả Arena trong vòng lặp huấn luyện chính: Hiển thị đồng thời Bootstrap 95% CI kèm giá trị $p$-value, tỷ lệ thắng quân Đen/Trắng, và ghi nhận đầy đủ vào dictionary kết quả iteration.
+- [x] **Toàn Bộ 199/199 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 26 test modules trong 25.78 giây.
+
+

@@ -590,16 +590,21 @@ class AlphaZeroPipeline:
             best_elo = self.elo_tracker.get_rating(self.current_best_id)
 
             ci_str = ""
-            if arena_result.win_rate_ci:
+            if arena_result.pair_bootstrap_ci:
+                b_low, b_high = arena_result.pair_bootstrap_ci
+                p_val_str = f", p={arena_result.paired_p_value:.3f}" if arena_result.paired_p_value is not None else ""
+                ci_str = f" [Pair Bootstrap 95% CI: {b_low*100:.1f}% - {b_high*100:.1f}%{p_val_str}]"
+            elif arena_result.win_rate_ci:
                 ci_low, ci_high = arena_result.win_rate_ci
-                ci_str = f" [95% CI: {ci_low*100:.1f}% - {ci_high*100:.1f}%]"
+                ci_str = f" [Wilson 95% CI: {ci_low*100:.1f}% - {ci_high*100:.1f}%]"
 
             print(
                 f"    Result: {arena_result.candidate_wins}W - {arena_result.baseline_wins}L - {arena_result.draws}D "
                 f"({arena_result.candidate_win_rate * 100:.1f}%{ci_str})"
             )
             print(
-                f"    By Color: Black {arena_result.candidate_as_black_wins}W - White {arena_result.candidate_as_white_wins}W | "
+                f"    By Color: Black {arena_result.candidate_as_black_wins}W ({arena_result.candidate_as_black_win_rate*100:.1f}%) - "
+                f"White {arena_result.candidate_as_white_wins}W ({arena_result.candidate_as_white_win_rate*100:.1f}%) | "
                 f"Candidate Elo: {cand_elo:.1f} | Best Elo: {best_elo:.1f}"
             )
 
@@ -702,6 +707,8 @@ class AlphaZeroPipeline:
             "value_loss": avg_v_loss,
             "arena_win_rate": win_rate,
             "arena_win_rate_ci": arena_result.win_rate_ci if self.config.gating else None,
+            "arena_pair_bootstrap_ci": arena_result.pair_bootstrap_ci if self.config.gating else None,
+            "arena_p_value": arena_result.paired_p_value if self.config.gating else None,
             "arena_black_wins": arena_result.candidate_as_black_wins if self.config.gating else 0,
             "arena_white_wins": arena_result.candidate_as_white_wins if self.config.gating else 0,
             "accepted": accepted,

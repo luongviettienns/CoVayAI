@@ -9,7 +9,15 @@ from arena.elo import (
 from arena.match import (
     Arena,
     ArenaResult,
+    PairedGameResult,
     play_arena_game,
+    compute_wilson_score_interval,
+    compute_paired_bootstrap_ci,
+    compute_paired_permutation_test,
+)
+from arena.evaluation import (
+    FixedBaselineEvaluator,
+    BaselineEvaluationReport,
 )
 
 __all__ = [
@@ -19,5 +27,11 @@ __all__ = [
     "EloTracker",
     "Arena",
     "ArenaResult",
+    "PairedGameResult",
     "play_arena_game",
+    "compute_wilson_score_interval",
+    "compute_paired_bootstrap_ci",
+    "compute_paired_permutation_test",
+    "FixedBaselineEvaluator",
+    "BaselineEvaluationReport",
 ]

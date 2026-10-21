@@ -233,10 +233,11 @@
     - Đối đầu `CaptureHeuristicModel` (AI chiến thuật chuyên săn bắt quân atari): Thắng áp đảo **$4/4$ ván ($100.0\%$)** qua các ván đấu 91 – 152 nước cờ.
     - Mô hình đã hình thành trực giác bảo vệ quân, kiểm soát vùng biên và ăn quân đối phương.
   - Thăng cấp `checkpoint_iter_20.pt` thành `best_model.pt` làm hạt giống chuẩn mực cho Giai đoạn 2.
-- [ ] **Giai đoạn 2 (Iterations 21 $\rightarrow$ 70) [TIẾN ĐỘ ~94% - ĐANG CHẠY ITERATION 66/70]**:
+- [ ] **Giai đoạn 2 (Iterations 21 $\rightarrow$ 70) [TIẾN ĐỘ ~95% - ĐANG CHẠY ITERATION 67/70]**:
   - Cấu hình: `--sims 64`, `--train-steps 100`, `--batch-size 64`, `--no-gating` (huấn luyện liên tục AlphaZero 2018).
-  - Trạng thái hiện tại: Đã hoàn tất 65/70 iterations, đang chạy iteration 66.
+  - Trạng thái hiện tại: Đã hoàn tất 66/70 iterations, đang chạy iteration 67.
   - Tỷ lệ ván đấu kết thúc bằng `reason=resign` gia tăng đáng kể, chứng minh mô hình đã học được cách định giá thế trận (Value Head) rất nhạy bén, nhận biết khi nào vị thế không thể cứu vãn để đầu hàng thay vì đánh bừa.
+  - Dọn dẹp lưu trữ định kỳ: Đã xóa 57 checkpoint trung gian không cần thiết, chỉ lưu giữ các mốc milestone quan trọng (Iter 1, 10, 20, 30, 40, 50, 60, 65, 66) cùng `best_model.pt`, giải phóng hơn 500 MB dung lượng đĩa.
   - Dự kiến hoàn tất toàn bộ 70 iterations vào khoảng 08:20 AM.
 
 ### Phase 17: CoVayAI Web Arena — Đấu Trường Trực Quan Web Test Chơi Cờ Vây [HOÀN THÀNH - 96/96 Tests Passed]

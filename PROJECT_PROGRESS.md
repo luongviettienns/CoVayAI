@@ -541,5 +541,24 @@
   - Gắn Annotated Tag `v1.0.0`: *"Release v1.0.0: Complete 19x19 Go Production Upgrade with Size-Independent Model, Fast Engine, Batched Inference, Compact Storage, Auxiliary Supervision, and Fault Recovery"*.
   - Sẵn sàng phục vụ triển khai huấn luyện quy mô lớn hoặc tích hợp Web UI production.
 
+### Phase 31: Master Plan V4 — PR 1: Module Audit Chi Phí & Throughput (C0 & P11) [HOÀN THÀNH - 169/169 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_benchmarks/test_cost_report.py`)**:
+  - Xây dựng 8 bài kiểm thử chuyên sâu về hạch toán chi phí và thông lượng kinh tế:
+    - `test_cost_schema_exists_and_is_valid_json`: Xác thực tệp lược đồ `cost_schema.json` tuân thủ chuẩn JSON Schema draft-07.
+    - `test_compute_cost_metrics_nominal`: Kiểm chứng độ chính xác các công thức chi phí GPU, điện năng tiêu thụ, chi phí lưu trữ và đơn giá kinh tế (`cost_per_1k_completed_games`, `cost_per_1k_valid_positions`, `cost_per_1k_full_search_positions`, `cost_per_1m_nn_evals`).
+    - `test_zero_denominators_return_na_no_zerodivisionerror`: Xử lý triệt để mẫu số bằng 0 (khi chưa có game hoàn tất hoặc chưa có vị trí huấn luyện), trả về `"N/A"` thay vì crash hệ thống bằng ZeroDivisionError.
+    - `test_negative_values_raise_valueerror`: Từ chối nghiêm ngặt các giá trị âm (chi phí, giờ chạy, số lượng ván đấu) và phát cảnh báo lỗi `ValueError`.
+    - `test_missing_optional_fields_defaults_and_validation`: Tự động áp dụng giá trị mặc định hợp lý cho các trường tùy chọn bị khuyết mà không làm gián đoạn pipeline.
+    - `test_break_even_analysis_local_vs_cloud`: Phân tích điểm hòa vốn kinh tế giữa chi phí điện GPU cá nhân và giá thuê GPU Cloud (RunPod/Vast), tính toán hệ số tăng tốc cần thiết (`required_speedup_factor`).
+    - `test_generate_and_save_cost_report`: Xuất báo cáo kiểm toán chuẩn hóa kèm thông tin phần cứng, môi trường CUDA/PyTorch và mã băm Git commit SHA.
+    - `test_compare_two_runs_cost_efficiency`: So sánh hiệu quả chi phí và tỷ lệ tiết kiệm giữa hai đợt huấn luyện / benchmark.
+- [x] **Lược Đồ Chuẩn Hóa Kiểm Toán Chi Phí (`benchmarks/cost_schema.json`)**:
+  - Khai báo đầy đủ các thuộc tính thời gian chạy, tài nguyên phần cứng, siêu tham số mạng, năng lượng điện tiêu thụ và các chỉ số kinh tế.
+- [x] **Module Hạch Toán Chi Phí & Thông Lượng (`benchmarks/cost_report.py`)**:
+  - Cung cấp các hàm `compute_cost_metrics`, `compute_cloud_break_even`, `generate_cost_report`, `compare_cost_reports` và giao diện dòng lệnh CLI độc lập.
+- [x] **Toàn Bộ 169/169 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 21 test modules trong 18.99 giây.
+
+
 
 

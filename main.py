@@ -151,6 +151,7 @@ class PipelineConfig:
     channels_last: bool = default_cfg.CHANNELS_LAST
     compile_model: bool = default_cfg.COMPILE_MODEL
     cudnn_benchmark: bool = default_cfg.CUDNN_BENCHMARK
+    pack_buffer_bits: bool = default_cfg.PACK_BUFFER_BITS
 
     def validate(self) -> None:
         """Validate pipeline configuration bounds."""
@@ -258,9 +259,9 @@ class AlphaZeroPipeline:
             self.candidate_model.to_channels_last()
 
         # Replay Buffer & Validation Buffer
-        self.buffer = ReplayBuffer(capacity=cfg.buffer_size, board_size=cfg.board_size)
+        self.buffer = ReplayBuffer(capacity=cfg.buffer_size, board_size=cfg.board_size, pack_bits=cfg.pack_buffer_bits)
         self.val_buffer: Optional[ReplayBuffer] = (
-            ReplayBuffer(capacity=max(1000, int(cfg.buffer_size * cfg.val_ratio)), board_size=cfg.board_size)
+            ReplayBuffer(capacity=max(1000, int(cfg.buffer_size * cfg.val_ratio)), board_size=cfg.board_size, pack_bits=cfg.pack_buffer_bits)
             if cfg.val_ratio > 0.0
             else None
         )
@@ -770,6 +771,7 @@ def main() -> None:
     parser.add_argument("--gpu-price-per-hour", type=float, default=default_cfg.GPU_PRICE_PER_HOUR, help="Cost per GPU hour in USD for budget tracking")
     parser.add_argument("--channels-last", action="store_true", default=default_cfg.CHANNELS_LAST, help="Enable PyTorch channels-last (NHWC) memory format for Tensor Core acceleration")
     parser.add_argument("--compile-model", action="store_true", default=default_cfg.COMPILE_MODEL, help="Enable torch.compile JIT optimization for training model")
+    parser.add_argument("--pack-buffer-bits", action="store_true", default=default_cfg.PACK_BUFFER_BITS, help="Enable bit-packed experience replay buffer")
     parser.add_argument("--no-cudnn-benchmark", action="store_false", dest="cudnn_benchmark", help="Disable cuDNN autotuner benchmark")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
     parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
@@ -818,6 +820,7 @@ def main() -> None:
         channels_last=args.channels_last,
         compile_model=args.compile_model,
         cudnn_benchmark=args.cudnn_benchmark,
+        pack_buffer_bits=args.pack_buffer_bits,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

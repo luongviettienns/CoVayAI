@@ -75,4 +75,5 @@ GPU_PRICE_PER_HOUR: float = 0.0
 CHANNELS_LAST: bool = False
 COMPILE_MODEL: bool = False
 CUDNN_BENCHMARK: bool = True
-
+# --- Nén & Lưu Trữ Experience Replay (Bit-Packed & Zero-Copy Buffer) ---
+PACK_BUFFER_BITS: bool = False

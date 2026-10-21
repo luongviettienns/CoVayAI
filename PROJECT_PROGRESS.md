@@ -609,3 +609,25 @@
   - Cung cấp công cụ benchmark CLI độc lập hỗ trợ cấu hình đa dạng kích thước bàn cờ (9×9, 19×19), kiến trúc ResNet (số blocks, số filters), batch size và lưu trữ kết quả kiểm toán dưới dạng JSON.
 - [x] **Toàn Bộ 186/186 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 24 test modules trong 61.90 giây.
+
+### Phase 35: Master Plan V4 — PR 5: Bit-Packed & Zero-Copy Experience Replay Buffer (C1 & P6) [HOÀN THÀNH - 192/192 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_selfplay/test_bit_packed_and_zero_copy_buffer.py`)**:
+  - Xây dựng 6 bài kiểm thử chuyên sâu về nén bit-packing và triệt tiêu sao chép bộ nhớ:
+    - `test_pack_and_unpack_go_features_equivalence`: Kiểm chứng thuật toán nén `pack_go_features` và giải nén `unpack_go_features` khôi phục chính xác 100% bit-for-bit mảng 17 mặt phẳng trạng thái cờ Vây trên cả bàn cờ 9×9 và 19×19, xử lý chuẩn xác lượt đi của cả quân Đen và quân Trắng.
+    - `test_bit_packed_buffer_memory_savings`: Xác thực tỷ lệ nén bộ nhớ thực tế đạt đúng **8.5×** đối với mảng lưu trữ trạng thái bàn cờ (từ 17 bytes xuống còn 2 bytes cho 16 mặt phẳng nhị phân + 1 bit màu quân cho mỗi điểm giao cắt).
+    - `test_bit_packed_buffer_push_and_sequence_access`: Kiểm chứng các thao tác `push()` và truy cập tuần tự theo thời gian `__getitem__` giải nén tự động sang tensor float32 mượt mà, không phụ thuộc vào trạng thái đóng gói bên dưới.
+    - `test_bit_packed_buffer_sample_batch_shapes_and_values`: Xác thực hàm lấy mẫu ngẫu nhiên `sample_batch` giải nén vector hóa tốc độ cao, hỗ trợ trọn vẹn phép tăng cường dữ liệu đối xứng nhóm D4 (D4 dihedral symmetry augmentation).
+    - `test_bit_packed_with_auxiliary_heads`: Kiểm chứng khả năng tích hợp đồng thời các đầu phụ trợ Auxiliary Heads (ma trận kiểm soát lãnh thổ Ownership và điểm số chênh lệch Score) trong bộ đệm bit-packed.
+    - `test_zero_copy_save_and_load_roundtrip_both_modes`: Kiểm chứng cơ chế lưu đĩa Zero-Copy thông qua view mảng liên tục (`self.states[:self.size]`), triệt tiêu hoàn toàn đỉnh nhọn RAM (RAM spike) do lệnh `.copy()` gây ra; đồng thời kiểm chứng khả năng nạp lại (`load()`) đồng bộ hai chiều giữa chế độ chuẩn và chế độ đóng gói bit-packed.
+- [x] **Thuật Toán Bit-Packing & Cải Tiến ReplayBuffer Schema v4 (`selfplay/replay_buffer.py`)**:
+  - Triển khai hàm `pack_go_features(state)` và `unpack_go_features(packed, color)`.
+  - Mở rộng `ReplayBuffer.__init__` và `MultiSizeReplayBuffer` với cờ `pack_bits: bool = False`. Khi kích hoạt, chỉ cấp phát mảng `packed_states: (capacity, 2, H, W)` kiểu `uint8` và `colors: (capacity, 1)` kiểu `uint8`, tiết kiệm hàng gigabyte RAM cho bàn cờ 19×19.
+  - Tối ưu hóa phương thức `save()`: Bỏ hàm `.copy()`, sử dụng trực tiếp slicing `[:self.size]` của mảng NumPy liên tục bộ nhớ, ngăn chặn cấp phát trùng lặp ~1.5 GB RAM khi snapshot buffer.
+  - Nâng cấp `BUFFER_SCHEMA_VERSION = 4`: Hỗ trợ nạp và di trú tương thích ngược hoàn hảo với Schema v1, v2, v3 và v4.
+- [x] **Tích Hợp Cấu Hình & Giao Diện CLI (`config.py`, `main.py`)**:
+  - Khai báo cờ cấu hình `PACK_BUFFER_BITS: bool = False` trong `config.py`.
+  - Thêm thuộc tính `pack_buffer_bits` vào `PipelineConfig`, khởi tạo `self.buffer` và `self.val_buffer` với tham số `pack_bits`.
+  - Bổ sung cờ CLI `--pack-buffer-bits` vào bộ phân tích cú pháp tham số dòng lệnh `main()`.
+- [x] **Toàn Bộ 192/192 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 25 test modules trong 23.24 giây.
+

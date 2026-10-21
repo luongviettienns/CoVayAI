@@ -117,7 +117,7 @@ def test_schema_v2_metadata_and_backward_compatibility():
             data = pickle.load(f)
 
         assert isinstance(data, dict)
-        assert data["schema_version"] in (2, 3)
+        assert data["schema_version"] in (2, 3, 4)
         assert data["board_size"] == 5
         assert data["capacity"] == 20
         assert data["size"] == 5

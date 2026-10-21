@@ -7,7 +7,35 @@ import numpy as np
 import torch
 from nn.features import apply_random_symmetry
 
-BUFFER_SCHEMA_VERSION = 3
+BUFFER_SCHEMA_VERSION = 4
+
+
+def pack_go_features(state: np.ndarray) -> Tuple[np.ndarray, int]:
+    """
+    Pack 17-plane Go features into 2 bytes per intersection + 1 turn bit.
+    Planes 0..15 are binary (player/opponent stones, histories) -> packed along plane axis into 2 uint8 bytes.
+    Plane 16 is turn indicator (1 if Black to play, 0 if White).
+
+    Returns:
+        (packed_planes: np.ndarray of shape (2, H, W) dtype uint8, color: int (0 or 1))
+    """
+    planes_16 = (state[:16] > 0.5).astype(np.uint8) if state.dtype != np.uint8 else (state[:16] > 0).astype(np.uint8)
+    packed_planes = np.packbits(planes_16, axis=0)
+    color = 1 if float(np.mean(state[16])) > 0.5 else 0
+    return packed_planes, color
+
+
+def unpack_go_features(packed_planes: np.ndarray, color: int) -> np.ndarray:
+    """
+    Reconstruct full 17-plane Go features from 2 packed bytes and turn color bit.
+
+    Returns:
+        unpacked: np.ndarray of shape (17, H, W) dtype uint8
+    """
+    h, w = packed_planes.shape[-2], packed_planes.shape[-1]
+    unpacked_16 = np.unpackbits(packed_planes, axis=0, count=16)
+    color_plane = np.full((1, h, w), 1 if color > 0 else 0, dtype=np.uint8)
+    return np.concatenate([unpacked_16, color_plane], axis=0)
 
 
 class _BufferView:
@@ -31,7 +59,10 @@ class _BufferView:
         else:
             slot = (self._rb.write_index + idx) % self._rb.capacity
 
-        s = self._rb.states[slot].astype(np.float32)
+        if getattr(self._rb, "pack_bits", False):
+            s = unpack_go_features(self._rb.packed_states[slot], int(self._rb.colors[slot, 0])).astype(np.float32)
+        else:
+            s = self._rb.states[slot].astype(np.float32)
         pi = self._rb.pis[slot].astype(np.float32)
         z = float(self._rb.zs[slot, 0])
         return (s, pi, z)
@@ -51,13 +82,16 @@ class ReplayBuffer:
       - Persistence: Schema v3 with atomic writes, backward-compatible with Schema v1 and v2.
     """
 
-    def __init__(self, capacity: int = 200_000, board_size: Optional[int] = None):
+    def __init__(self, capacity: int = 200_000, board_size: Optional[int] = None, pack_bits: bool = False):
         self.capacity = int(capacity)
         self.board_size = board_size
+        self.pack_bits = pack_bits
         self.size = 0
         self.write_index = 0
 
         self.states: Optional[np.ndarray] = None
+        self.packed_states: Optional[np.ndarray] = None
+        self.colors: Optional[np.ndarray] = None
         self.pis: Optional[np.ndarray] = None
         self.zs: Optional[np.ndarray] = None
         self.ownerships: Optional[np.ndarray] = None
@@ -72,7 +106,14 @@ class ReplayBuffer:
         """Preallocate contiguous compact NumPy arrays."""
         self.board_size = board_size
         action_size = board_size * board_size + 1
-        self.states = np.zeros((self.capacity, 17, board_size, board_size), dtype=np.uint8)
+        if self.pack_bits:
+            self.packed_states = np.zeros((self.capacity, 2, board_size, board_size), dtype=np.uint8)
+            self.colors = np.zeros((self.capacity, 1), dtype=np.uint8)
+            self.states = None
+        else:
+            self.states = np.zeros((self.capacity, 17, board_size, board_size), dtype=np.uint8)
+            self.packed_states = None
+            self.colors = None
         self.pis = np.zeros((self.capacity, action_size), dtype=np.float16)
         self.zs = np.zeros((self.capacity, 1), dtype=np.int8)
         self.ownerships = np.zeros((self.capacity, board_size, board_size), dtype=np.int8)
@@ -91,10 +132,17 @@ class ReplayBuffer:
         has_aux: bool = False,
     ) -> None:
         """Store a single training sample with optional metadata and auxiliary targets."""
-        if self.states is None:
-            self._allocate(board_size=state.shape[-1])
+        if self.pack_bits:
+            if self.packed_states is None:
+                self._allocate(board_size=state.shape[-1])
+            packed, col = pack_go_features(state)
+            self.packed_states[self.write_index] = packed
+            self.colors[self.write_index, 0] = col
+        else:
+            if self.states is None:
+                self._allocate(board_size=state.shape[-1])
+            self.states[self.write_index] = (state > 0.5).astype(np.uint8) if state.dtype != np.uint8 else state
 
-        self.states[self.write_index] = (state > 0.5).astype(np.uint8) if state.dtype != np.uint8 else state
         self.pis[self.write_index] = pi.astype(np.float16)
         self.zs[self.write_index, 0] = int(round(z)) if z != 0 else 0
 
@@ -177,14 +225,27 @@ class ReplayBuffer:
         Converts compact uint8, float16, int8 into float32 PyTorch tensors.
         If return_aux=True, also returns augmented ownership maps, score targets, and aux_masks.
         """
-        if self.size == 0 or self.states is None:
-            raise ValueError("Cannot sample from an empty ReplayBuffer.")
+        if self.pack_bits:
+            if self.size == 0 or self.packed_states is None:
+                raise ValueError("Cannot sample from an empty ReplayBuffer.")
+        else:
+            if self.size == 0 or self.states is None:
+                raise ValueError("Cannot sample from an empty ReplayBuffer.")
 
         replace = self.size < batch_size
         indices = np.random.choice(self.size, size=batch_size, replace=replace)
 
         if not augment:
-            batch_states = self.states[indices].astype(np.float32)
+            if self.pack_bits:
+                batch_packed = self.packed_states[indices]
+                batch_unpacked = np.unpackbits(batch_packed, axis=1, count=16).astype(np.float32)
+                batch_colors = np.broadcast_to(
+                    self.colors[indices][:, :, None, None],
+                    (batch_size, 1, self.board_size, self.board_size),
+                ).astype(np.float32)
+                batch_states = np.concatenate([batch_unpacked, batch_colors], axis=1)
+            else:
+                batch_states = self.states[indices].astype(np.float32)
             batch_pis = self.pis[indices].astype(np.float32)
             if return_aux:
                 batch_owns = (
@@ -206,7 +267,10 @@ class ReplayBuffer:
             )
 
             for i, idx in enumerate(indices):
-                s = self.states[idx].astype(np.float32)
+                if self.pack_bits:
+                    s = unpack_go_features(self.packed_states[idx], int(self.colors[idx, 0])).astype(np.float32)
+                else:
+                    s = self.states[idx].astype(np.float32)
                 pi = self.pis[idx].astype(np.float32)
                 flip = bool(np.random.choice([False, True]))
                 rot = int(np.random.randint(4))
@@ -266,17 +330,25 @@ class ReplayBuffer:
         self.write_index = 0
         if self.states is not None:
             self.states.fill(0)
+        if self.packed_states is not None:
+            self.packed_states.fill(0)
+        if self.colors is not None:
+            self.colors.fill(0)
+        if self.pis is not None:
             self.pis.fill(0)
+        if self.zs is not None:
             self.zs.fill(0)
         if self.ownerships is not None:
             self.ownerships.fill(0)
+        if self.scores is not None:
             self.scores.fill(0)
+        if self.aux_masks is not None:
             self.aux_masks.fill(0)
         if self.metadata is not None:
             self.metadata = [None] * self.capacity
 
     def save(self, filepath: str) -> None:
-        """Serialize buffer to disk atomically with Schema v3 metadata."""
+        """Serialize buffer to disk atomically with zero-copy array views."""
         tmp_path = filepath + ".tmp"
         payload = {
             "schema_version": BUFFER_SCHEMA_VERSION,
@@ -284,27 +356,28 @@ class ReplayBuffer:
             "size": self.size,
             "write_index": self.write_index,
             "board_size": self.board_size,
+            "pack_bits": self.pack_bits,
         }
 
-        if self.states is not None and self.size > 0:
-            if self.size < self.capacity:
-                payload["states"] = self.states[: self.size].copy()
-                payload["pis"] = self.pis[: self.size].copy()
-                payload["zs"] = self.zs[: self.size].copy()
-                payload["ownerships"] = self.ownerships[: self.size].copy() if self.ownerships is not None else None
-                payload["scores"] = self.scores[: self.size].copy() if self.scores is not None else None
-                payload["aux_masks"] = self.aux_masks[: self.size].copy() if self.aux_masks is not None else None
-                payload["metadata"] = self.metadata[: self.size] if self.metadata else None
+        if self.size > 0:
+            if self.pack_bits:
+                payload["packed_states"] = self.packed_states[: self.size]
+                payload["colors"] = self.colors[: self.size]
+                payload["states"] = None
             else:
-                payload["states"] = self.states.copy()
-                payload["pis"] = self.pis.copy()
-                payload["zs"] = self.zs.copy()
-                payload["ownerships"] = self.ownerships.copy() if self.ownerships is not None else None
-                payload["scores"] = self.scores.copy() if self.scores is not None else None
-                payload["aux_masks"] = self.aux_masks.copy() if self.aux_masks is not None else None
-                payload["metadata"] = self.metadata.copy() if self.metadata else None
+                payload["states"] = self.states[: self.size]
+                payload["packed_states"] = None
+                payload["colors"] = None
+            payload["pis"] = self.pis[: self.size]
+            payload["zs"] = self.zs[: self.size]
+            payload["ownerships"] = self.ownerships[: self.size] if self.ownerships is not None else None
+            payload["scores"] = self.scores[: self.size] if self.scores is not None else None
+            payload["aux_masks"] = self.aux_masks[: self.size] if self.aux_masks is not None else None
+            payload["metadata"] = self.metadata[: self.size] if self.metadata else None
         else:
             payload["states"] = None
+            payload["packed_states"] = None
+            payload["colors"] = None
             payload["pis"] = None
             payload["zs"] = None
             payload["ownerships"] = None
@@ -322,7 +395,7 @@ class ReplayBuffer:
     def load(self, filepath: str) -> None:
         """
         Deserialize buffer from disk.
-        Supports Schema v3, Schema v2 (float32 auto-downcast), and Schema v1.
+        Supports Schema v4 (bit-packed or standard), Schema v3, Schema v2 (float32 auto-downcast), and Schema v1.
         """
         with open(filepath, "rb") as f:
             data = pickle.load(f)
@@ -340,7 +413,7 @@ class ReplayBuffer:
 
         if isinstance(data, dict):
             version = data.get("schema_version")
-            if version in (2, 3):
+            if version in (2, 3, 4):
                 loaded_board_size = data.get("board_size")
                 if self.board_size is not None and loaded_board_size is not None:
                     if self.board_size != loaded_board_size:
@@ -348,12 +421,20 @@ class ReplayBuffer:
                             f"Buffer board_size mismatch: file has {loaded_board_size}, but buffer configured with {self.board_size}"
                         )
 
+                is_file_packed = bool(
+                    data.get("pack_bits", False)
+                    or ("packed_states" in data and data["packed_states"] is not None)
+                )
                 board_size = loaded_board_size if loaded_board_size is not None else self.board_size
-                if board_size is not None and self.states is None:
-                    self._allocate(board_size)
+
+                if (self.states is None and self.packed_states is None) or (self.pack_bits != is_file_packed):
+                    self.pack_bits = is_file_packed
+                    if board_size is not None:
+                        self._allocate(board_size)
 
                 loaded_size = data.get("size", 0)
-                states = data.get("states")
+                states = data.get("packed_states") if is_file_packed else data.get("states")
+                colors = data.get("colors") if is_file_packed else None
                 pis = data.get("pis")
                 zs = data.get("zs")
                 meta = data.get("metadata")
@@ -365,56 +446,61 @@ class ReplayBuffer:
                     self.clear()
                     return
 
-                if self.states is None:
+                if self.states is None and self.packed_states is None:
+                    self.pack_bits = is_file_packed
                     self._allocate(states.shape[-1])
 
                 # Cast pis to float16 and zs to int8 if loaded from v2 (float32)
                 conv_pis = pis.astype(np.float16) if pis.dtype != np.float16 else pis
                 conv_zs = np.round(zs).astype(np.int8) if zs.dtype != np.int8 else zs
 
-                if data.get("capacity") == self.capacity and loaded_size == len(states):
-                    if loaded_size < self.capacity:
-                        self.states[:loaded_size] = states
-                        self.pis[:loaded_size] = conv_pis
-                        self.zs[:loaded_size] = conv_zs
-                        if owns is not None and self.ownerships is not None:
-                            self.ownerships[:loaded_size] = owns
-                        if scores is not None and self.scores is not None:
-                            self.scores[:loaded_size] = scores
-                        if masks is not None and self.aux_masks is not None:
-                            self.aux_masks[:loaded_size] = masks
-                        if meta is not None:
-                            self.metadata[:loaded_size] = meta
-                        self.write_index = data.get("write_index", loaded_size)
-                        self.size = loaded_size
+                if (
+                    self.pack_bits == is_file_packed
+                    and data.get("capacity") == self.capacity
+                    and loaded_size == len(states)
+                ):
+                    if is_file_packed:
+                        self.packed_states[:loaded_size] = states
+                        self.colors[:loaded_size] = colors
                     else:
-                        self.states[:] = states
-                        self.pis[:] = conv_pis
-                        self.zs[:] = conv_zs
-                        if owns is not None and self.ownerships is not None:
-                            self.ownerships[:] = owns
-                        if scores is not None and self.scores is not None:
-                            self.scores[:] = scores
-                        if masks is not None and self.aux_masks is not None:
-                            self.aux_masks[:] = masks
-                        if meta is not None:
-                            self.metadata[:] = meta
-                        self.write_index = data.get("write_index", 0)
-                        self.size = loaded_size
+                        self.states[:loaded_size] = states
+
+                    self.pis[:loaded_size] = conv_pis
+                    self.zs[:loaded_size] = conv_zs
+                    if owns is not None and self.ownerships is not None:
+                        self.ownerships[:loaded_size] = owns
+                    if scores is not None and self.scores is not None:
+                        self.scores[:loaded_size] = scores
+                    if masks is not None and self.aux_masks is not None:
+                        self.aux_masks[:loaded_size] = masks
+                    if meta is not None:
+                        self.metadata[:loaded_size] = meta
+                    self.write_index = data.get("write_index", loaded_size % self.capacity)
+                    self.size = loaded_size
                 else:
-                    # Capacity changed: migrate chronologically
+                    # Capacity changed or packing format mismatch: migrate chronologically
                     self.clear()
                     old_cap = data.get("capacity", len(states))
                     old_w_idx = data.get("write_index", 0)
-                    if loaded_size < old_cap:
-                        for i in range(loaded_size):
-                            m = meta[i] if meta else None
-                            self.push(states[i], conv_pis[i], float(conv_zs[i, 0]), metadata=m)
-                    else:
-                        for i in range(loaded_size):
-                            slot = (old_w_idx + i) % old_cap
-                            m = meta[slot] if meta else None
-                            self.push(states[slot], conv_pis[slot], float(conv_zs[slot, 0]), metadata=m)
+                    for i in range(loaded_size):
+                        slot = i if loaded_size < old_cap else (old_w_idx + i) % old_cap
+                        if is_file_packed:
+                            s = unpack_go_features(states[slot], int(colors[slot, 0]))
+                        else:
+                            s = states[slot]
+                        m = meta[slot] if meta else None
+                        own_s = owns[slot] if owns is not None else None
+                        sc_s = float(scores[slot, 0]) if scores is not None else None
+                        has_aux = bool(masks[slot, 0]) if masks is not None else False
+                        self.push(
+                            s,
+                            conv_pis[slot],
+                            float(conv_zs[slot, 0]),
+                            metadata=m,
+                            ownership=own_s,
+                            score=sc_s,
+                            has_aux=has_aux,
+                        )
                 return
 
             raise ValueError(f"Unsupported buffer schema version: {version}")
@@ -428,14 +514,17 @@ class MultiSizeReplayBuffer:
     Ensures homogenous batches per forward pass without padding overhead.
     """
 
-    def __init__(self, capacity_per_size: int = 100_000):
+    def __init__(self, capacity_per_size: int = 100_000, pack_bits: bool = False):
         self.capacity_per_size = capacity_per_size
+        self.pack_bits = pack_bits
         self.buffers: Dict[int, ReplayBuffer] = {}
 
     def _get_or_create(self, board_size: int) -> ReplayBuffer:
         if board_size not in self.buffers:
             self.buffers[board_size] = ReplayBuffer(
-                capacity=self.capacity_per_size, board_size=board_size
+                capacity=self.capacity_per_size,
+                board_size=board_size,
+                pack_bits=self.pack_bits,
             )
         return self.buffers[board_size]
 

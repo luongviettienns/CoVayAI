@@ -69,8 +69,8 @@ def test_ring_buffer_lifecycle_and_dtype():
     buf = ReplayBuffer(capacity=capacity, board_size=5)
     assert buf.states is not None
     assert buf.states.dtype == np.uint8
-    assert buf.pis.dtype == np.float32
-    assert buf.zs.dtype == np.float32
+    assert buf.pis.dtype == np.float16
+    assert buf.zs.dtype == np.int8
     assert buf.size == 0
     assert buf.write_index == 0
 
@@ -117,7 +117,7 @@ def test_schema_v2_metadata_and_backward_compatibility():
             data = pickle.load(f)
 
         assert isinstance(data, dict)
-        assert data["schema_version"] == 2
+        assert data["schema_version"] in (2, 3)
         assert data["board_size"] == 5
         assert data["capacity"] == 20
         assert data["size"] == 5

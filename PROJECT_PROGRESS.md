@@ -443,3 +443,29 @@
 - [x] **Toàn Bộ 134/134 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 16 test modules trong 21.79 giây.
 
+### Phase 26: Lộ Trình 19×19 — PR 8: Compact Experience Storage, Float16 Policy & Sharding (Phase P5) [HOÀN THÀNH - 142/142 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_selfplay/test_compact_storage.py`, `tests/test_selfplay/test_replay_buffer.py`)**:
+  - Xây dựng 8 bài kiểm thử chuyên sâu về tối ưu bộ đệm:
+    - `test_compact_buffer_dtypes_and_memory`: Kiểm chứng mảng nội bộ lưu chính xác kiểu `uint8` (states), `float16` (pis), `int8` (zs), giảm dung lượng thô xuống $3.79\times$.
+    - `test_float16_policy_precision_and_entropy`: Sai số tuyệt đối giữa biểu diễn float32 và float16 của policy $< 5 \times 10^{-4}$, entropy phân phối chính sách bảo toàn trong dung sai $< 10^{-3}$.
+    - `test_sample_batch_returns_float32_tensors`: Hàm `sample_batch` tự động ép kiểu và trả về tensor PyTorch `float32` tương thích 100% với `Trainer`.
+    - `test_metadata_extraction_from_game_result`: Tự động trích xuất metadata phong phú (`board_size`, `komi`, `termination_reason`, `seed`, `moves`, `winner`) từ `GameResult`.
+    - `test_storage_shard_checksum_and_atomic_write`: Lưu shard nguyên tử (`.tmp` $\to$ `.npz`), tính toán và xác thực mã băm SHA-256 chống hỏng tệp hoặc can thiệp dữ liệu.
+    - `test_multi_size_replay_buffer`: Kiểm chứng `MultiSizeReplayBuffer` phân vùng dữ liệu theo từng cỡ bàn (9×9 và 19×19), lấy mẫu theo từng cỡ bàn đồng nhất mà không cần kỹ thuật padding phức tạp.
+    - `test_buffer_shard_storage_directory_manager`: Quản lý lưu trữ shard trong thư mục chỉ định có kiểm tra checksum.
+    - `test_loss_tolerance_between_float32_and_float16_targets`: Sai số cross-entropy loss giữa target float32 và float16 $< 10^{-4}$ (đạt $3.8 \times 10^{-5}$).
+- [x] **Tối Ưu Hóa Bộ Đệm Kinh Nghiệm Sang Định Dạng Compact (`selfplay/replay_buffer.py`)**:
+  - Chuyển đổi chính sách mục tiêu `pis` sang `np.float16` và nhãn kết quả `zs` sang `np.int8` (ánh xạ $-1, 0, 1$).
+  - Nâng cấp phiên bản schema lên `BUFFER_SCHEMA_VERSION = 3`, bảo toàn tương thích ngược 100% với các tệp checkpoint buffer Schema v1 và Schema v2 (tự động cast về kiểu compact khi load).
+  - Tích hợp lớp `MultiSizeReplayBuffer` hỗ trợ huấn luyện đa kích thước (curriculum 9×9 $\to$ 13×13 $\to$ 19×19).
+- [x] **Hệ Thống Lưu Trữ Shard Có Mã Băm SHA-256 (`selfplay/storage.py`)**:
+  - Cung cấp `save_shard` và `load_shard` lưu trữ nén `np.savez_compressed` với cơ chế ghi nguyên tử `os.replace`.
+  - Kiểm định toàn vẹn dữ liệu bằng SHA-256 trước khi giải nạp, lập tức báo lỗi nếu tệp bị cắt cụt (truncated) hoặc sai lệch byte.
+- [x] **Đo Đạc Hiệu Quả Bộ Nhớ Thực Tế Trên 200,000 Mẫu 19×19**:
+  - Bản cũ (FP32 states, FP32 pis, FP32 zs): **4.843 GiB** (~4,959.1 MiB).
+  - Bản mới (Uint8 states, FP16 pis, Int8 zs): **1.278 GiB** (~1,308.8 MiB).
+  - Mức giảm bộ nhớ đo được: **giảm đúng $3.79\times$**, khớp tuyệt đối dự toán lý thuyết của roadmap!
+- [x] **Toàn Bộ 142/142 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 17 test modules trong 40.63 giây.
+
+

@@ -150,12 +150,13 @@ class AlphaZeroNet(nn.Module):
             )
             return True, True
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def predict(
         self,
         state_features: np.ndarray,
         legal_moves_mask: Optional[np.ndarray] = None,
         device: Optional[torch.device] = None,
+        use_amp: bool = False,
     ) -> Tuple[np.ndarray, float]:
         """
         Fast inference evaluation for MCTS across any board size.
@@ -164,38 +165,28 @@ class AlphaZeroNet(nn.Module):
             state_features: numpy array of shape (C, N, N) or (B, C, N, N)
             legal_moves_mask: optional binary mask of shape (N*N + 1,)
             device: target torch device (default: next(self.parameters()).device)
+            use_amp: if True and on CUDA, use Automatic Mixed Precision (FP16)
 
         Returns:
             (probabilities: np.ndarray, value: float)
         """
-        self.eval()
-        dev = device if device is not None else next(self.parameters()).device
-
         single_input = state_features.ndim == 3
         if single_input:
-            x_tensor = torch.from_numpy(state_features).unsqueeze(0).to(dev)
+            batch_features = state_features[np.newaxis, ...]
+            batch_masks = legal_moves_mask[np.newaxis, ...] if legal_moves_mask is not None else None
+            probs, vals = self.predict_batch(batch_features, legal_moves_masks=batch_masks, device=device, use_amp=use_amp)
+            return probs[0], float(vals[0, 0])
         else:
-            x_tensor = torch.from_numpy(state_features).to(dev)
+            probs, vals = self.predict_batch(state_features, legal_moves_masks=legal_moves_mask, device=device, use_amp=use_amp)
+            return probs, vals
 
-        policy_logits, value = self(x_tensor)
-
-        logits = policy_logits[0] if single_input else policy_logits
-
-        if legal_moves_mask is not None:
-            mask_tensor = torch.from_numpy(legal_moves_mask).to(dev)
-            logits = torch.where(mask_tensor > 0, logits, torch.tensor(-1e9, device=dev))
-
-        probs = F.softmax(logits, dim=-1).cpu().numpy()
-        val = float(value[0, 0].item()) if single_input else value.cpu().numpy()
-
-        return probs, val
-
-    @torch.no_grad()
+    @torch.inference_mode()
     def predict_batch(
         self,
         state_features: np.ndarray,
         legal_moves_masks: Optional[np.ndarray] = None,
         device: Optional[torch.device] = None,
+        use_amp: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Fast batch inference evaluation for multiple states across any board size.
@@ -204,6 +195,7 @@ class AlphaZeroNet(nn.Module):
             state_features: numpy array of shape (B, C, N, N)
             legal_moves_masks: optional binary masks of shape (B, N*N + 1)
             device: target torch device (default: next(self.parameters()).device)
+            use_amp: if True and on CUDA, use Automatic Mixed Precision (FP16)
 
         Returns:
             (probabilities: np.ndarray of shape (B, action_size), values: np.ndarray of shape (B, 1))
@@ -212,14 +204,22 @@ class AlphaZeroNet(nn.Module):
         dev = device if device is not None else next(self.parameters()).device
 
         x_tensor = torch.from_numpy(state_features).to(dev)
-        policy_logits, value = self(x_tensor)
+
+        if use_amp and dev.type == "cuda":
+            with torch.autocast(device_type="cuda", dtype=torch.float16):
+                policy_logits, value = self(x_tensor)
+        else:
+            policy_logits, value = self(x_tensor)
 
         if legal_moves_masks is not None:
             mask_tensor = torch.from_numpy(legal_moves_masks).to(dev)
-            policy_logits = torch.where(mask_tensor > 0, policy_logits, torch.tensor(-1e9, device=dev))
+            # Prevent all-zero mask row producing NaNs through softmax
+            row_sums = mask_tensor.sum(dim=-1, keepdim=True)
+            safe_mask = torch.where(row_sums > 0, mask_tensor, torch.ones_like(mask_tensor))
+            policy_logits = torch.where(safe_mask > 0, policy_logits, torch.tensor(-1e9, device=dev, dtype=policy_logits.dtype))
 
-        probs = F.softmax(policy_logits, dim=-1).cpu().numpy()
-        val = value.cpu().numpy()
+        probs = F.softmax(policy_logits.float(), dim=-1).cpu().numpy()
+        val = value.float().cpu().numpy()
 
         return probs, val
 

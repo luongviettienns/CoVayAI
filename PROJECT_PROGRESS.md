@@ -402,3 +402,19 @@
   - `play()` trên $19\times 19$ late-game: Tăng từ $75,208$ ops/s lên **$155,424$ ops/s** (**nhanh gấp $2.07\times$**).
 - [x] **Toàn Bộ 112/112 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 14 test modules trong 10.99 giây.
+
+### Phase 24: Lộ Trình 19×19 — PR 6: Batched Masked Inference API & AMP Acceleration (Phase P4) [HOÀN THÀNH - 128/128 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_nn/test_batched_inference.py`)**:
+  - Xây dựng 16 bài kiểm thử suy luận theo batch:
+    - `test_predict_batch_matches_single_predict`: Khẳng định `predict_batch` cho kết quả đồng nhất tuyệt đối với `predict` đơn lẻ trên các kích thước batch [1, 8, 16, 32] và các cỡ bàn 9×9, 13×13, 19×19 (sai số tuyệt đối $< 10^{-5}$).
+    - `test_predict_batch_strictly_zeroes_illegal_moves`: Các nước đi bị mask cấm có xác suất chuẩn xác bằng $0.0$, tổng xác suất các nước đi hợp lệ luôn bằng $1.0$.
+    - `test_predict_batch_all_zero_mask_fallback`: Xử lý an toàn trường hợp biên mask toàn bộ bằng 0 mà không sinh NaN hay crash chương trình.
+    - `test_inference_mode_active`: Kiểm chứng suy luận vận hành dưới `torch.inference_mode()` (tối ưu bộ nhớ và tắt view tracking).
+    - `test_amp_fp16_batched_inference`: Xác minh suy luận AMP FP16 (Automatic Mixed Precision) trên GPU CUDA đạt độ chính xác tương đương FP32 trong sai số $< 5 \times 10^{-3}$.
+- [x] **Chuẩn Hóa & Tối Ưu API Suy Luận (`nn/model.py`)**:
+  - Áp dụng decorator `@torch.inference_mode()` cho cả `predict` và `predict_batch`.
+  - Hỗ trợ tham số `use_amp: bool = False` kích hoạt `torch.autocast("cuda", dtype=torch.float16)` khi chạy trên GPU.
+  - Xử lý mask hợp lệ hóa theo cơ chế vector hóa GPU không gây nghẽn đồng bộ CPU-GPU per-sample.
+  - Hàm `predict` ủy quyền trực tiếp qua `predict_batch`, bảo đảm 100% tính nhất quán toán học.
+- [x] **Toàn Bộ 128/128 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 15 test modules trong 24.80 giây.

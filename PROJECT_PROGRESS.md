@@ -287,3 +287,40 @@
   - Server `web/server.py` đang nạp checkpoint `69-Revenge` trên cổng `8080`.
   - Thử nghiệm thực tế: Khi Black đánh `E5`, AI Trắng lập tức phản ứng bằng các nước cờ đối kháng trực diện như `C6`, `C4`, `D3`, `E4` tranh giành trung tâm quyết liệt.
   - Toàn bộ **96/96 tests tự động PASS 100%**.
+
+### Phase 19: Lộ Trình 19×19 — PR 1: Cố Định & Đo Baseline (Phase P0) [HOÀN THÀNH - 96/96 Tests Passed]
+- [x] **Khởi Tạo Nhánh & Lưu Vết Môi Trường Phần Cứng (`feat/train-19x19`)**:
+  - Nhánh làm việc: `feat/train-19x19` tách biệt hoàn toàn khỏi nhánh sản xuất.
+  - Thông số hệ thống đo đạc thực tế:
+    - GPU: NVIDIA GeForce RTX 3050 Laptop GPU (4.00 GB VRAM).
+    - CPU: Intel64 Family 6 Model 154 Stepping 3, GenuineIntel (16 logical cores).
+    - RAM: 15.63 GB.
+    - OS: Windows 11 (10.0.22621).
+    - Python: 3.13.15, PyTorch: 2.6.0+cu124, CUDA: 12.4.
+  - Ghi nhận `test_baseline.txt`: **96/96 tests PASS 100%** trong 11.46s trước mọi can thiệp.
+- [x] **Xây Dựng Bộ Công Cụ Đo Lường Tái Lập (`benchmarks/`)**:
+  - `benchmarks/fixtures.py`: Sinh thế trận bàn cờ xác định (opening, middle-game, late-game) qua seed cố định cho các kích thước bàn 9×9, 13×13, 19×19.
+  - `benchmarks/bench_board.py`: Đo tốc độ `board.copy/s`, `get_legal_moves/s`, `play/s`.
+  - `benchmarks/bench_inference.py`: Đo đạc inference throughput và latency qua các batch size [1, 8, 16, 32, 64, 128] kèm CUDA warmup và `torch.cuda.synchronize()`.
+  - `benchmarks/bench_mcts.py`: Đo thông lượng tìm kiếm MCTS (`nodes/s`) trên các cỡ bàn và số lượng simulation [32, 64, 128].
+  - `benchmarks/bench_pipeline.py`: Đo thông lượng sinh mẫu self-play (`positions/s`, `games/hour`) và peak VRAM/RAM.
+  - `benchmarks/run_all.py`: Bộ điều phối trung tâm tự động lưu báo cáo ra `benchmarks/results/baseline_p0.json` và các file CSV.
+- [x] **Kết Quả Đo Lường Baseline Thực Tế Trước Tối Ưu (A/B Ground Truth)**:
+  - **Tốc độ Board Engine**:
+    - `board.copy()`: Đạt $354,101$ ops/s ($2.82$ µs) trên 9×9; đạt $202,842 - 266,510$ ops/s ($3.75 - 4.93$ µs) trên 19×19.
+    - `get_legal_moves()`: Khởi đầu đạt $7,583$ ops/s (9×9 opening) nhưng tụt xuống $830$ ops/s ($1,204$ µs) ở 19×19 late-game do chi phí BFS chuỗi khí $\to$ Xác nhận đây là nút thắt cổ chai cần tối ưu ở PR 5.
+    - `play()`: Đạt $128,130$ ops/s (9×9 opening) và $76,307 - 150,466$ ops/s trên 19×19.
+  - **Thông lượng Neural Network Inference**:
+    - Bàn 9×9: $556$ evals/s (batch 1) $\to$ $19,115$ evals/s (batch 128, $28.8$ MB VRAM).
+    - Bàn 13×13: $534$ evals/s (batch 1) $\to$ $9,637$ evals/s (batch 128, $45.7$ MB VRAM).
+    - Bàn 19×19: $250$ evals/s (batch 1) $\to$ $5,057$ evals/s (batch 128, $85.0$ MB VRAM) $\to$ Minh chứng hiệu quả tăng tốc gấp **$20.2\times$** khi gom batch.
+  - **Thông lượng MCTS Search**:
+    - Bàn 9×9: $\approx 203 - 232$ nodes/s.
+    - Bàn 13×13: $\approx 172 - 208$ nodes/s.
+    - Bàn 19×19: $\approx 135 - 161$ nodes/s ($199$ ms cho 32 sims, $792$ ms cho 128 sims).
+  - **Self-Play Pipeline**:
+    - 9×9 (32 sims): $6.68$ pos/s, $400.5$ games/hr.
+    - 19×19 (32 sims): $9.93$ pos/s, $1,191.6$ games/hr (trên kịch bản 30 nước); Peak VRAM chỉ $14.4$ MB, RAM hệ thống ổn định $\approx 14.4$ GB.
+- [x] **Cổng Nghiệm Thu P0 Đạt PASS Tuyệt Đối**:
+  - Có baseline tái chạy được độc lập với đầy đủ file log, CSV, JSON trong `benchmarks/results/`.
+  - 100% 96/96 test suite tiếp tục PASS xanh không một lỗi hồi quy.

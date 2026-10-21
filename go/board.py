@@ -42,18 +42,18 @@ class Board:
     def _find_chain_and_liberties(
         self, grid: np.ndarray, start_r: int, start_c: int
     ) -> Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]:
-        """Find the connected stone chain and its liberties using BFS."""
+        """Find the connected stone chain and its liberties using DFS stack."""
         color = grid[start_r, start_c]
         if color == EMPTY:
             return set(), set()
 
         chain = set()
         liberties = set()
-        queue = [(start_r, start_c)]
+        stack = [(start_r, start_c)]
         visited = {(start_r, start_c)}
 
-        while queue:
-            r, c = queue.pop(0)
+        while stack:
+            r, c = stack.pop()
             chain.add((r, c))
 
             for nr, nc in self.get_neighbors(r, c):
@@ -62,15 +62,64 @@ class Board:
                     liberties.add((nr, nc))
                 elif n_color == color and (nr, nc) not in visited:
                     visited.add((nr, nc))
-                    queue.append((nr, nc))
+                    stack.append((nr, nc))
 
         return chain, liberties
+
+    def _get_chain_if_captured(
+        self, grid: np.ndarray, start_r: int, start_c: int, opp_color: int, new_stone: Tuple[int, int]
+    ) -> Optional[List[Tuple[int, int]]]:
+        """
+        Check if the opponent chain at (start_r, start_c) has any liberty other than new_stone.
+        If it has another liberty, early exits immediately and returns None (not captured).
+        If it has NO other liberties, returns the full chain of stones to be captured.
+        """
+        stack = [(start_r, start_c)]
+        visited = {(start_r, start_c)}
+        chain = [(start_r, start_c)]
+
+        while stack:
+            r, c = stack.pop()
+            for nr, nc in self.get_neighbors(r, c):
+                if (nr, nc) == new_stone:
+                    continue
+                n_color = grid[nr, nc]
+                if n_color == EMPTY:
+                    return None  # Has another liberty: cannot be captured!
+                elif n_color == opp_color and (nr, nc) not in visited:
+                    visited.add((nr, nc))
+                    chain.append((nr, nc))
+                    stack.append((nr, nc))
+
+        return chain
+
+    def _has_any_liberty(
+        self, grid: np.ndarray, start_r: int, start_c: int, player: int
+    ) -> bool:
+        """
+        Check if the friendly chain starting at (start_r, start_c) has at least 1 liberty.
+        Early exits immediately upon encountering the first empty intersection.
+        """
+        stack = [(start_r, start_c)]
+        visited = {(start_r, start_c)}
+
+        while stack:
+            r, c = stack.pop()
+            for nr, nc in self.get_neighbors(r, c):
+                n_color = grid[nr, nc]
+                if n_color == EMPTY:
+                    return True  # Found 1 liberty: alive!
+                elif n_color == player and (nr, nc) not in visited:
+                    visited.add((nr, nc))
+                    stack.append((nr, nc))
+
+        return False  # Zero liberties: suicide
 
     def _simulate_move(
         self, action: int, player: int
     ) -> Tuple[bool, Optional[np.ndarray], int, int]:
         """
-        Simulate a move and check all validity criteria:
+        Simulate a move and check all validity criteria without gratuitous allocations:
         1. Within board bounds and intersection is empty
         2. Capture any 0-liberty enemy chains
         3. Suicide check: friendly chain must have >0 liberties
@@ -89,41 +138,53 @@ class Board:
         if self.grid[r, c] != EMPTY:
             return False, None, 0, 0
 
+        opp = opponent(player)
+        neighbors = self.get_neighbors(r, c)
+
+        has_empty_neighbor = False
+        has_opp_neighbor = False
+
+        for nr, nc in neighbors:
+            col = self.grid[nr, nc]
+            if col == EMPTY:
+                has_empty_neighbor = True
+            elif col == opp:
+                has_opp_neighbor = True
+
+        captured_stones: List[Tuple[int, int]] = []
+        visited_opp: Set[Tuple[int, int]] = set()
+
+        if has_opp_neighbor:
+            for nr, nc in neighbors:
+                if self.grid[nr, nc] == opp and (nr, nc) not in visited_opp:
+                    ch = self._get_chain_if_captured(self.grid, nr, nc, opp, new_stone=(r, c))
+                    if ch is not None:
+                        visited_opp.update(ch)
+                        captured_stones.extend(ch)
+
+        if not captured_stones and not has_empty_neighbor:
+            self.grid[r, c] = player
+            alive = self._has_any_liberty(self.grid, r, c, player)
+            self.grid[r, c] = EMPTY
+            if not alive:
+                return False, None, 0, 0
+
+        new_hash = self.zobrist.toggle_stone(self.current_position_hash, r, c, player)
+        for cr, cc in captured_stones:
+            new_hash = self.zobrist.toggle_stone(new_hash, cr, cc, opp)
+
+        if new_hash in self.history_positions:
+            return False, None, 0, 0
+
         new_grid = self.grid.copy()
         new_grid[r, c] = player
-        new_pos_hash = self.zobrist.toggle_stone(self.current_position_hash, r, c, player)
+        for cr, cc in captured_stones:
+            new_grid[cr, cc] = EMPTY
 
-        opp = opponent(player)
-        captured_count = 0
-        visited_opp_chains = set()
-
-        # Check adjacent enemy chains to see if any are captured
-        for nr, nc in self.get_neighbors(r, c):
-            if new_grid[nr, nc] == opp and (nr, nc) not in visited_opp_chains:
-                opp_chain, opp_liberties = self._find_chain_and_liberties(new_grid, nr, nc)
-                visited_opp_chains.update(opp_chain)
-                if len(opp_liberties) == 0:
-                    # Capture this chain
-                    for cr, cc in opp_chain:
-                        new_grid[cr, cc] = EMPTY
-                        new_pos_hash = self.zobrist.toggle_stone(new_pos_hash, cr, cc, opp)
-                    captured_count += len(opp_chain)
-
-        # Check friendly chain liberties (Suicide rule check)
-        _, friendly_liberties = self._find_chain_and_liberties(new_grid, r, c)
-        if len(friendly_liberties) == 0:
-            # Suicide is strictly illegal in standard Chinese rules
-            return False, None, 0, 0
-
-        # Positional Superko (PSK) check:
-        # A move is illegal if the resulting stone configuration has already appeared in the game.
-        if new_pos_hash in self.history_positions:
-            return False, None, 0, 0
-
-        return True, new_grid, captured_count, new_pos_hash
+        return True, new_grid, len(captured_stones), new_hash
 
     def is_valid_move(self, action: int, player: Optional[int] = None) -> bool:
-        """Check if an action is legal for the given player (default: current player)."""
+        """Fast legality check without allocating or copying board grid."""
         p = player if player is not None else self.current_player
         if action == self.pass_action:
             return True
@@ -133,50 +194,115 @@ class Board:
             return False
 
         opp = opponent(p)
-        has_empty = False
-        has_opp = False
+        neighbors = self.get_neighbors(r, c)
 
-        for nr, nc in self.get_neighbors(r, c):
-            color = self.grid[nr, nc]
-            if color == EMPTY:
-                has_empty = True
-            elif color == opp:
-                has_opp = True
+        has_empty_neighbor = False
+        has_opp_neighbor = False
 
-        # Fast path: Empty point with an empty neighbor and no opponent neighbors
-        # Cannot be suicide (has empty liberty), cannot capture (no opp neighbors),
-        # only check positional superko via single XOR hash.
-        if has_empty and not has_opp:
+        for nr, nc in neighbors:
+            col = self.grid[nr, nc]
+            if col == EMPTY:
+                has_empty_neighbor = True
+            elif col == opp:
+                has_opp_neighbor = True
+
+        # Fast path: Empty point with an empty neighbor and no opponent neighbor
+        if has_empty_neighbor and not has_opp_neighbor:
             new_hash = self.zobrist.toggle_stone(self.current_position_hash, r, c, p)
-            if new_hash not in self.history_positions:
-                return True
+            return new_hash not in self.history_positions
 
-        # Fallback to full move simulation (BFS chain/liberties & superko)
-        is_valid, _, _, _ = self._simulate_move(action, p)
-        return is_valid
+        # Check opponent captures
+        captured_stones: List[Tuple[int, int]] = []
+        visited_opp: Set[Tuple[int, int]] = set()
+
+        if has_opp_neighbor:
+            for nr, nc in neighbors:
+                if self.grid[nr, nc] == opp and (nr, nc) not in visited_opp:
+                    ch = self._get_chain_if_captured(self.grid, nr, nc, opp, new_stone=(r, c))
+                    if ch is not None:
+                        visited_opp.update(ch)
+                        captured_stones.extend(ch)
+
+        # Check suicide
+        if not captured_stones and not has_empty_neighbor:
+            self.grid[r, c] = p
+            alive = self._has_any_liberty(self.grid, r, c, p)
+            self.grid[r, c] = EMPTY
+            if not alive:
+                return False
+
+        # Positional Superko check
+        new_hash = self.zobrist.toggle_stone(self.current_position_hash, r, c, p)
+        for cr, cc in captured_stones:
+            new_hash = self.zobrist.toggle_stone(new_hash, cr, cc, opp)
+
+        return new_hash not in self.history_positions
 
     def play(self, action: int) -> bool:
         """
-        Execute an action on the board.
+        Execute an action on the board in-place.
         Returns True if successful, False if illegal move.
         """
-        is_valid, new_grid, captured_count, new_pos_hash = self._simulate_move(
-            action, self.current_player
-        )
-        if not is_valid:
-            return False
-
         if action == self.pass_action:
             self.consecutive_passes += 1
             self.history_grids.append(self.grid.copy())
-        else:
-            self.consecutive_passes = 0
-            self.grid = new_grid
-            self.current_position_hash = new_pos_hash
-            self.history_positions.add(new_pos_hash)
-            self.history_grids.append(self.grid.copy())
+            self.current_player = opponent(self.current_player)
+            self.move_count += 1
+            return True
 
-        self.current_player = opponent(self.current_player)
+        r, c = divmod(action, self.size)
+        if not (0 <= r < self.size and 0 <= c < self.size) or self.grid[r, c] != EMPTY:
+            return False
+
+        p = self.current_player
+        opp = opponent(p)
+        neighbors = self.get_neighbors(r, c)
+
+        has_empty_neighbor = False
+        has_opp_neighbor = False
+
+        for nr, nc in neighbors:
+            col = self.grid[nr, nc]
+            if col == EMPTY:
+                has_empty_neighbor = True
+            elif col == opp:
+                has_opp_neighbor = True
+
+        captured_stones: List[Tuple[int, int]] = []
+        visited_opp: Set[Tuple[int, int]] = set()
+
+        if has_opp_neighbor:
+            for nr, nc in neighbors:
+                if self.grid[nr, nc] == opp and (nr, nc) not in visited_opp:
+                    ch = self._get_chain_if_captured(self.grid, nr, nc, opp, new_stone=(r, c))
+                    if ch is not None:
+                        visited_opp.update(ch)
+                        captured_stones.extend(ch)
+
+        if not captured_stones and not has_empty_neighbor:
+            self.grid[r, c] = p
+            alive = self._has_any_liberty(self.grid, r, c, p)
+            self.grid[r, c] = EMPTY
+            if not alive:
+                return False
+
+        new_hash = self.zobrist.toggle_stone(self.current_position_hash, r, c, p)
+        for cr, cc in captured_stones:
+            new_hash = self.zobrist.toggle_stone(new_hash, cr, cc, opp)
+
+        if new_hash in self.history_positions:
+            return False
+
+        # Apply move in-place
+        self.grid[r, c] = p
+        for cr, cc in captured_stones:
+            self.grid[cr, cc] = EMPTY
+
+        self.consecutive_passes = 0
+        self.current_position_hash = new_hash
+        self.history_positions.add(new_hash)
+        self.history_grids.append(self.grid.copy())
+        self.current_player = opp
         self.move_count += 1
         return True
 

@@ -385,3 +385,20 @@
   - Test kiểm tra trọng số ứng viên bị reject hỗ trợ cả `policy_spatial.weight` và `policy_fc.weight`.
 - [x] **Toàn Bộ 109/109 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 13 test modules trong 18.09 giây.
+
+### Phase 23: Lộ Trình 19×19 — PR 5: Tối Ưu Tốc Độ Go Engine CPU & Differential Testing (Phase P3) [HOÀN THÀNH - 112/112 Tests Passed]
+- [x] **Differential Testing Khắt Khe So Với Oracle Chuẩn (`tests/test_go/test_differential_board.py`)**:
+  - Xây dựng 3 bài kiểm thử vi sai:
+    - Đối chiếu 100% legal moves mask trên mọi hành động ($0 \dots N^2$) ở từng ply qua các ván đấu ngẫu nhiên trên $9\times 9$, $13\times 13$, và $19\times 19$.
+    - Đạt 0 sai lệch (zero discrepancy) về tính hợp lệ, trạng thái bàn cờ, bắt quân và mã băm Zobrist.
+- [x] **Tối Ưu Thuật Toán & Loại Bỏ Deep Copy Trong Legality Check (`go/board.py`, `go/scoring.py`)**:
+  - Thay thế BFS `pop(0)` bằng Stack DFS `pop()` $O(1)$ trong `_find_chain_and_liberties` và `compute_area_score`.
+  - **Early Exit Liberty Tracking**: Hàm `_get_chain_if_captured` và `_has_any_liberty` ngắt duyệt DFS ngay lập tức khi phát hiện điểm khí đầu tiên, loại bỏ việc duyệt toàn bộ các đám quân khổng lồ ở tàn cuộc.
+  - **Zero-Copy Legality Check**: `is_valid_move` và `play` không thực hiện `grid.copy()` khi kiểm tra tính hợp lệ. Tính toán mã băm Positional Superko gia tăng qua toggle Zobrist mà không cấp phát lại bộ nhớ.
+- [x] **Kết Quả Benchmark Tăng Tốc Thực Tế (`benchmarks/bench_board.py`)**:
+  - `get_legal_moves()` trên $19\times 19$ late-game: Tăng từ $711$ ops/s lên **$1,964$ ops/s** (**nhanh gấp $2.76\times$**, độ trễ giảm từ $1.41$ ms xuống $0.51$ ms).
+  - `get_legal_moves()` trên $13\times 13$ late-game: Tăng từ $1,256$ ops/s lên **$3,832$ ops/s** (**nhanh gấp $3.05\times$**).
+  - `get_legal_moves()` trên $9\times 9$ late-game: Tăng từ $3,700$ ops/s lên **$9,285$ ops/s** (**nhanh gấp $2.51\times$**).
+  - `play()` trên $19\times 19$ late-game: Tăng từ $75,208$ ops/s lên **$155,424$ ops/s** (**nhanh gấp $2.07\times$**).
+- [x] **Toàn Bộ 112/112 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 14 test modules trong 10.99 giây.

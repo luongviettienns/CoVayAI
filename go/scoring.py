@@ -28,14 +28,14 @@ def compute_area_score(board: Board, komi: float = 7.5) -> Tuple[float, float, i
     for r in range(size):
         for c in range(size):
             if grid[r, c] == EMPTY and (r, c) not in visited_empty:
-                # Find connected empty region
+                # Find connected empty region using stack DFS
                 component = []
                 border_colors = set()
-                queue = [(r, c)]
+                stack = [(r, c)]
                 visited_empty.add((r, c))
 
-                while queue:
-                    curr_r, curr_c = queue.pop(0)
+                while stack:
+                    curr_r, curr_c = stack.pop()
                     component.append((curr_r, curr_c))
 
                     for nr, nc in board.get_neighbors(curr_r, curr_c):
@@ -43,7 +43,7 @@ def compute_area_score(board: Board, komi: float = 7.5) -> Tuple[float, float, i
                         if color == EMPTY:
                             if (nr, nc) not in visited_empty:
                                 visited_empty.add((nr, nc))
-                                queue.append((nr, nc))
+                                stack.append((nr, nc))
                         else:
                             border_colors.add(color)
 

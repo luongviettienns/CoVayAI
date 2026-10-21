@@ -138,6 +138,7 @@ def play_arena_game(
     return_moves: bool = False,
     device: Optional[torch.device] = None,
     initial_moves: Optional[List[int]] = None,
+    adjudicate_truncated: bool = True,
 ) -> Union[Tuple[float, int], Tuple[float, int, List[int]]]:
     """Play a single head-to-head game between black_model and white_model.
 
@@ -221,8 +222,11 @@ def play_arena_game(
     if resigned_player is not None:
         winner_color = opponent(resigned_player)
         winner_val = +1.0 if winner_color == BLACK else -1.0
-    else:
+    elif board.consecutive_passes >= 2 or adjudicate_truncated:
         winner_val = get_winner_value(board, perspective=BLACK, komi=komi)
+    else:
+        # Game reached max_moves limit without terminating naturally and adjudication is disabled -> Draw (0.0)
+        winner_val = 0.0
 
     if return_moves:
         return winner_val, move_count, move_sequence

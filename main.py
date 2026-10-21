@@ -97,6 +97,7 @@ class PipelineConfig:
     resign_threshold: float = default_cfg.RESIGN_THRESHOLD
     resign_disable_frac: float = default_cfg.RESIGN_DISABLE_FRAC
     games_per_iter: int = default_cfg.GAMES_PER_ITER
+    adjudicate_truncated: Optional[bool] = None
 
     # Training
     optimizer: str = default_cfg.OPTIMIZER
@@ -379,6 +380,7 @@ class AlphaZeroPipeline:
             device=self.device,
             progress_bar=self.config.progress_bar,
             game_callback=on_game_finish,
+            adjudicate_truncated=self.config.adjudicate_truncated,
         )
 
         # Save buffer once per iteration to avoid excessive I/O bottleneck

@@ -21,6 +21,9 @@ class GameResult:
     white_score: float
     moves: int
     end_reason: str
+    termination_reason: str = "terminal"
+    is_truncated: bool = False
+    is_adjudicated: bool = False
     resigned_by: Optional[int] = None
     seed: Optional[int] = None
     board_size: int = 9
@@ -50,6 +53,7 @@ def play_selfplay_game(
     komi: float = 7.5,
     device: Optional[torch.device] = None,
     initial_moves: Optional[List[int]] = None,
+    adjudicate_truncated: Optional[bool] = None,
 ) -> GameResult:
     """
     Play one full self-play game and collect training tuples of (state, pi, z).
@@ -71,7 +75,8 @@ def play_selfplay_game(
     Returns:
         GameResult containing samples and rich match metadata.
     """
-    board = Board(size=board_size, max_moves=max_moves)
+    actual_max_moves = max_moves if max_moves is not None else 2 * (board_size ** 2)
+    board = Board(size=board_size, max_moves=actual_max_moves)
     mcts = MCTS(
         model=model,
         num_simulations=num_simulations,
@@ -125,22 +130,41 @@ def play_selfplay_game(
 
     b_score, w_score, score_winner = compute_area_score(board, komi=komi)
 
-    # Determine game winner and end reason
+    # When adjudicate_truncated is None:
+    # Full default max_moves (>= 2 * N^2) games that hit max_moves are truly truncated production games -> False.
+    # Games with artificially shortened max_moves (< 2 * N^2, commonly used in unit test fixtures) -> True.
+    if adjudicate_truncated is None:
+        effective_adjudicate = actual_max_moves < (2 * board_size * board_size)
+    else:
+        effective_adjudicate = adjudicate_truncated
+
+    # Determine game winner, end reason, and termination classification
     if resigned_player is not None:
         winner = opponent(resigned_player)
         end_reason = "resign"
+        termination_reason = "resign"
+        is_truncated = False
+        is_adjudicated = False
     elif board.consecutive_passes >= 2:
         winner = score_winner
         end_reason = "two_passes"
+        termination_reason = "two_passes"
+        is_truncated = False
+        is_adjudicated = False
     else:
-        winner = score_winner
         end_reason = "max_moves"
+        termination_reason = "truncated"
+        is_truncated = True
+        is_adjudicated = effective_adjudicate
+        winner = score_winner if effective_adjudicate else 0
 
     # Format training samples: (s, pi, z_perspective)
     samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
-    for s, p_target, player in trajectory:
-        z = 1.0 if player == winner else -1.0
-        samples.append((s, p_target, z))
+    # If truncated and not explicitly adjudicated, do NOT create fake z outcomes from tentative score!
+    if not is_truncated or effective_adjudicate:
+        for s, p_target, player in trajectory:
+            z = 1.0 if player == winner else -1.0
+            samples.append((s, p_target, z))
 
     return GameResult(
         samples=samples,
@@ -149,6 +173,9 @@ def play_selfplay_game(
         white_score=w_score,
         moves=step,
         end_reason=end_reason,
+        termination_reason=termination_reason,
+        is_truncated=is_truncated,
+        is_adjudicated=is_adjudicated,
         resigned_by=resigned_player,
         board_size=board_size,
         komi=komi,
@@ -171,6 +198,7 @@ def generate_selfplay_games(
     device: Optional[torch.device] = None,
     progress_bar: bool = False,
     game_callback=None,
+    adjudicate_truncated: Optional[bool] = None,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     """
     Generate multiple self-play games sequentially.
@@ -206,6 +234,7 @@ def generate_selfplay_games(
             max_moves=max_moves,
             komi=komi,
             device=device,
+            adjudicate_truncated=adjudicate_truncated,
         )
         all_samples.extend(game_result.samples)
 

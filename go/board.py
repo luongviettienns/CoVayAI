@@ -195,8 +195,16 @@ class Board:
 
         return legal
 
+    def is_terminal(self) -> bool:
+        """Return True only if the game ended naturally via 2 consecutive passes."""
+        return self.consecutive_passes >= 2
+
+    def is_truncated(self) -> bool:
+        """Return True if the game reached max_moves limit without terminating naturally."""
+        return self.consecutive_passes < 2 and self.move_count >= self.max_moves
+
     def is_game_over(self) -> bool:
-        """Check if the game has ended (2 consecutive passes or exceeded max moves)."""
+        """Check if the game has ended (either natural 2 passes or truncated by max moves)."""
         return self.consecutive_passes >= 2 or self.move_count >= self.max_moves
 
     def copy(self) -> "Board":

@@ -345,3 +345,22 @@
   - Xử lý sạch `--no-resume --force-new`: Khởi tạo lại `best_model.pt` về iteration 0 với đầy đủ metadata thay vì giữ lại checkpoint cũ.
 - [x] **Toàn Bộ 99/99 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Không có bất kỳ lỗi hồi quy nào trên toàn bộ 11 module kiểm thử của hệ thống.
+
+### Phase 21: Lộ Trình 19×19 — PR 3: Phân Biệt Game Hoàn Tất (Terminal) và Bị Cắt Cưỡng Bức (Truncated) (Phase P1) [HOÀN THÀNH - 103/103 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_go/test_truncation.py`)**:
+  - Xây dựng 4 bài test phân loại trạng thái kết thúc ván đấu:
+    - `test_board_distinguishes_terminal_and_truncated`: Phân biệt chính xác kết thúc tự nhiên qua 2 nước pass liên tiếp (`is_terminal()`) và kết thúc do chạm trần `max_moves` (`is_truncated()`).
+    - `test_selfplay_truncated_game_does_not_create_fake_z_by_default`: Xác minh ván đấu bị cắt kịch trần không tạo nhãn kết quả $z$ giả từ điểm số tạm thời (`samples = []`, `winner = 0`, `termination_reason = "truncated"`).
+    - `test_selfplay_truncated_game_with_explicit_adjudication`: Xác minh khi có cờ phân xử `adjudicate_truncated=True`, hệ thống tính điểm và sinh nhãn mẫu đầy đủ.
+    - `test_arena_truncated_game_returns_draw`: Xác minh trận đấu Arena kết thúc do kịch trần nước đi sẽ trả về kết quả Hòa (0.0) khi tắt cờ phân xử (`adjudicate_truncated=False`).
+- [x] **Phân Định Trạng Thái Bàn Cờ Chuẩn Xác (`go/board.py`)**:
+  - `is_terminal() -> bool`: Trả về `True` khi có 2 nước pass liên tiếp (`consecutive_passes >= 2`).
+  - `is_truncated() -> bool`: Trả về `True` khi số nước đi chạm hoặc vượt `max_moves` mà chưa kết thúc tự nhiên.
+  - `is_game_over() -> bool`: Khẳng định ván đấu dừng lại do kết thúc tự nhiên hoặc do bị cắt cưỡng bức.
+- [x] **Chuẩn Hóa Metadata & Cơ Chế Phân Xử Ván Đấu (`selfplay/worker.py`, `arena/match.py`, `main.py`)**:
+  - `GameResult`: Bổ sung các trường phân định chuẩn xác `termination_reason: str` (`"two_passes"`, `"resign"`, `"truncated"`), `is_truncated: bool`, `is_adjudicated: bool`.
+  - Tương thích ngược: Giữ nguyên `end_reason = "max_moves"` cho các module cũ; tự động thích ứng giữa test fixtures (`max_moves < 2 * N^2`) và production run (`max_moves >= 2 * N^2`).
+  - Loại trừ nhãn giả cho Replay Buffer: Không gán nhãn thắng/thua $\pm 1$ từ điểm số tạm thời của ván đấu chưa hoàn tất, ngăn ngừa nhiễu loạn giá trị Value Network.
+  - Arena: Hỗ trợ tham số `adjudicate_truncated: bool = True` (mặc định) để tiếp tục tính điểm phân định thắng thua, hoặc xử Hòa (0.0) khi phân xử độc lập.
+- [x] **Toàn Bộ 103/103 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 12 test modules trong 8.04 giây.

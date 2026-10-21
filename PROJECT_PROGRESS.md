@@ -512,4 +512,23 @@
 - [x] **Toàn Bộ 154/154 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 19 test modules trong 31.97 giây.
 
+### Phase 29: Lộ Trình 19×19 — PR 11: Fixed-Budget 19×19 Evaluation & Fault Recovery (Phase P7) [HOÀN THÀNH - 161/161 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_arena/test_fixed_budget_19x19_and_fault_recovery.py`)**:
+  - Xây dựng 7 bài kiểm thử chuyên sâu về đánh giá ngân sách cố định và tự phục hồi lỗi:
+    - `test_arena_fixed_budget_19x19_match`: Đấu Arena 19×19 ngân sách cố định (`num_sims=5`, `board_size=19`, `komi=7.5`, `opening_plies=2`) sử dụng khai cuộc ghép cặp (paired openings), hoán đổi màu quân đối xứng, tính toán khoảng tin cậy Wilson 95% chuẩn xác.
+    - `test_arena_asymmetric_simulation_budgets`: Hỗ trợ ngân sách mô phỏng bất đối xứng (`cand_sims` vs `base_sims`) phục vụ benchmark đường cong tăng trưởng sức mạnh (strength scaling curves).
+    - `test_evaluate_against_random_19x19`: Đánh giá mô hình `AlphaZeroNet` trước đối thủ `RandomModel` trên bàn 19×19 hoàn chỉnh mà không gặp lỗi tràn bộ nhớ (OOM) hay sai lệch chiều không gian.
+    - `test_fault_recovery_corrupt_manifest`: Xử lý an toàn khi tệp `latest_manifest.json` bị hỏng cấu trúc (JSONDecodeError), tự động fallback sang quét thư mục thay vì crash pipeline.
+    - `test_fault_recovery_corrupt_shard`: Xác thực kiểm tra mã băm SHA-256 từ chối nạp shard bị chỉnh sửa dữ liệu hoặc cắt cụt byte.
+    - `test_fault_recovery_orphaned_tmp_files`: Khả năng chịu lỗi khi ghi tệp bị gián đoạn bỏ lại tệp rác `.tmp`, pipeline tự động bỏ qua và nạp các tệp checkpoint nguyên vẹn.
+    - `test_resume_equivalence_19x19`: Kiểm chứng tính tương đương phục hồi 100% trên bàn 19×19 giữa pipeline chạy liên tục và pipeline phục hồi ngắt quãng từ đĩa.
+- [x] **Tối Ưu Hóa & Mở Rộng Hệ Thống Đấu Trường Arena (`arena/match.py`)**:
+  - Bổ sung tham số `black_sims` và `white_sims` trong `play_arena_game`, `cand_sims` và `base_sims` trong `Arena`.
+  - Cố định ngân sách tìm kiếm MCTS độc lập theo từng thực thể đấu thủ.
+- [x] **Cơ Chế Khôi Phục Lỗi Bền Vững & Phòng Ngừa Hỏng Dữ Liệu (`main.py`)**:
+  - Tách rời kiểm tra cú pháp JSON của `latest_manifest.json` khỏi kiểm tra tương thích kiến trúc `validate_checkpoint_compatibility`.
+  - Cho phép phục hồi mềm khi tệp manifest bị mất hoặc lỗi byte, đồng thời chặn đứng các xung đột kiến trúc sai kích cỡ bàn.
+- [x] **Toàn Bộ 161/161 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 20 test modules trong 29.21 giây.
+
 

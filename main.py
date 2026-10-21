@@ -153,8 +153,8 @@ class PipelineConfig:
             raise ValueError(f"train_steps must be >= 1, got {self.train_steps}")
         if not (0.0 <= self.resign_disable_frac <= 1.0):
             raise ValueError(f"resign_disable_frac must be between 0 and 1, got {self.resign_disable_frac}")
-        if self.arena_games < 1:
-            raise ValueError(f"arena_games must be >= 1, got {self.arena_games}")
+        if self.gating and self.arena_games < 1:
+            raise ValueError(f"arena_games must be >= 1 when gating is enabled, got {self.arena_games}")
 
 
 class AlphaZeroPipeline:
@@ -248,16 +248,22 @@ class AlphaZeroPipeline:
             # 1. First check atomic manifest (single source of truth)
             manifest_loaded = False
             if os.path.exists(manifest_path):
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = json.load(f)
-                validate_checkpoint_compatibility(manifest, self.config)
-                self.start_iteration = manifest["iteration"] + 1
-                self.current_best_id = manifest.get("best_model_id", "iter_0")
-                if "scheduler_state_dict" in manifest:
-                    self.trainer.scheduler.load_state_dict(manifest["scheduler_state_dict"])
-                    self.best_scheduler_state = copy.deepcopy(manifest["scheduler_state_dict"])
-                manifest_loaded = True
-                print(f"[+] Loaded atomic manifest from {manifest_path} (Iteration {manifest['iteration']}, Best: {self.current_best_id})")
+                manifest = None
+                try:
+                    with open(manifest_path, "r", encoding="utf-8") as f:
+                        manifest = json.load(f)
+                except Exception as e:
+                    print(f"[!] Warning reading latest_manifest.json: {e}. Falling back to directory scan.")
+
+                if manifest is not None and isinstance(manifest, dict):
+                    validate_checkpoint_compatibility(manifest, self.config)
+                    self.start_iteration = manifest["iteration"] + 1
+                    self.current_best_id = manifest.get("best_model_id", "iter_0")
+                    if "scheduler_state_dict" in manifest:
+                        self.trainer.scheduler.load_state_dict(manifest["scheduler_state_dict"])
+                        self.best_scheduler_state = copy.deepcopy(manifest["scheduler_state_dict"])
+                    manifest_loaded = True
+                    print(f"[+] Loaded atomic manifest from {manifest_path} (Iteration {manifest['iteration']}, Best: {self.current_best_id})")
 
             # 2. Resume Elo ratings
             if os.path.exists(ratings_path):

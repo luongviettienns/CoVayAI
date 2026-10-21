@@ -139,6 +139,8 @@ def play_arena_game(
     device: Optional[torch.device] = None,
     initial_moves: Optional[List[int]] = None,
     adjudicate_truncated: bool = True,
+    black_sims: Optional[int] = None,
+    white_sims: Optional[int] = None,
 ) -> Union[Tuple[float, int], Tuple[float, int, List[int]]]:
     """Play a single head-to-head game between black_model and white_model.
 
@@ -154,9 +156,12 @@ def play_arena_game(
     """
     board = Board(size=board_size, max_moves=max_moves)
 
+    b_sims = black_sims if black_sims is not None else num_sims
+    w_sims = white_sims if white_sims is not None else num_sims
+
     mcts_black = MCTS(
         model=black_model,
-        num_simulations=num_sims,
+        num_simulations=b_sims,
         c_puct=c_puct,
         add_noise=False,
         komi=komi,
@@ -164,7 +169,7 @@ def play_arena_game(
     )
     mcts_white = MCTS(
         model=white_model,
-        num_simulations=num_sims,
+        num_simulations=w_sims,
         c_puct=c_puct,
         add_noise=False,
         komi=komi,
@@ -247,10 +252,14 @@ class Arena:
         resign_threshold: Optional[float] = None,
         opening_plies: int = 8,
         device: Optional[torch.device] = None,
+        cand_sims: Optional[int] = None,
+        base_sims: Optional[int] = None,
     ):
         self.board_size = board_size
         self.komi = komi
         self.num_sims = num_sims
+        self.cand_sims = cand_sims
+        self.base_sims = base_sims
         self.c_puct = c_puct
         self.max_moves = max_moves
         self.win_threshold = win_threshold
@@ -319,6 +328,8 @@ class Arena:
                 resign_threshold=self.resign_threshold,
                 device=self.device,
                 initial_moves=opening_moves,
+                black_sims=self.cand_sims,
+                white_sims=self.base_sims,
             )
             cand_b_win = w1
             if w1 > 0:
@@ -344,6 +355,8 @@ class Arena:
                 resign_threshold=self.resign_threshold,
                 device=self.device,
                 initial_moves=opening_moves,
+                black_sims=self.base_sims,
+                white_sims=self.cand_sims,
             )
             cand_w_win = -w2
             if w2 < 0:

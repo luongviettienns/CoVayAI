@@ -193,18 +193,55 @@ def generate_selfplay_games(
     temp_moves: int = 12,
     resign_threshold: float = -0.9,
     resign_disable_frac: float = 0.10,
+    disable_resign: Optional[bool] = None,
     max_moves: Optional[int] = None,
     komi: float = 7.5,
     device: Optional[torch.device] = None,
     progress_bar: bool = False,
     game_callback=None,
     adjudicate_truncated: Optional[bool] = None,
+    num_workers: int = 1,
+    max_batch_size: int = 32,
+    max_wait_ms: float = 2.0,
+    use_amp: bool = False,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     """
-    Generate multiple self-play games sequentially.
+    Generate multiple self-play games sequentially or concurrently across multiple worker processes.
     Disables resignation for a fraction of games (e.g. 10%) to verify against false-positive resigns.
     Supports real-time progress bars via tqdm and per-game callbacks.
     """
+    if num_workers > 1:
+        from selfplay.actor_pool import SelfPlayActorPool
+        all_samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
+        with SelfPlayActorPool(
+            model=model,
+            num_workers=num_workers,
+            max_batch_size=max_batch_size,
+            max_wait_ms=max_wait_ms,
+            device=device,
+            use_amp=use_amp,
+        ) as pool:
+            results = pool.generate_games(
+                num_games=num_games,
+                board_size=board_size,
+                num_simulations=num_simulations,
+                c_puct=c_puct,
+                dirichlet_alpha=dirichlet_alpha,
+                dirichlet_eps=dirichlet_eps,
+                temp_moves=temp_moves,
+                resign_threshold=resign_threshold,
+                resign_disable_frac=resign_disable_frac,
+                disable_resign=disable_resign,
+                max_moves=max_moves,
+                komi=komi,
+                adjudicate_truncated=adjudicate_truncated,
+                progress_bar=progress_bar,
+                game_callback=game_callback,
+            )
+            for r in results:
+                all_samples.extend(r.samples)
+        return all_samples
+
     try:
         from tqdm import tqdm
     except ImportError:
@@ -219,7 +256,10 @@ def generate_selfplay_games(
 
     for game_idx in iterator:
         # Disable resignation for a subset of games
-        disable_resign = (np.random.random() < resign_disable_frac)
+        effective_disable_resign = (
+            disable_resign if disable_resign is not None
+            else (np.random.random() < resign_disable_frac)
+        )
 
         game_result = play_selfplay_game(
             model=model,
@@ -230,7 +270,7 @@ def generate_selfplay_games(
             dirichlet_eps=dirichlet_eps,
             temp_moves=temp_moves,
             resign_threshold=resign_threshold,
-            disable_resign=disable_resign,
+            disable_resign=effective_disable_resign,
             max_moves=max_moves,
             komi=komi,
             device=device,

@@ -131,6 +131,82 @@ def run_pipeline_benchmarks(
     return results
 
 
+def benchmark_parallel_selfplay_throughput(
+    board_size: int = 9,
+    num_games: int = 4,
+    num_simulations: int = 32,
+    max_moves: int = 40,
+    num_workers_list: List[int] = None,
+    device: torch.device = None,
+) -> List[Dict[str, Any]]:
+    """Compare self-play generation throughput across varying worker counts."""
+    from selfplay.worker import generate_selfplay_games
+
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if num_workers_list is None:
+        num_workers_list = [1, 2]
+
+    model = AlphaZeroNet(board_size=board_size, num_res_blocks=6, num_filters=96).to(device)
+    model.eval()
+
+    results = []
+    print(f"\nRunning Parallel Worker Benchmarks ({board_size}x{board_size}, {num_games} games, {num_simulations} sims) on {device.type.upper()}:")
+
+    for w in num_workers_list:
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(device)
+            torch.cuda.synchronize(device)
+
+        start_time = time.perf_counter()
+        samples = generate_selfplay_games(
+            model=model,
+            num_games=num_games,
+            board_size=board_size,
+            num_simulations=num_simulations,
+            max_moves=max_moves,
+            c_puct=1.5,
+            temp_moves=10,
+            device=device,
+            num_workers=w,
+            max_batch_size=32,
+            max_wait_ms=2.0,
+            progress_bar=False,
+        )
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        elapsed_sec = time.perf_counter() - start_time
+
+        num_positions = len(samples)
+        pos_per_sec = num_positions / elapsed_sec if elapsed_sec > 0 else 0.0
+        games_per_hr = (num_games * 3600.0) / elapsed_sec if elapsed_sec > 0 else 0.0
+        peak_vram = 0.0
+        if device.type == "cuda":
+            peak_vram = torch.cuda.max_memory_allocated(device) / (1024 * 1024)
+
+        item = {
+            "num_workers": w,
+            "board_size": board_size,
+            "num_games": num_games,
+            "num_simulations": num_simulations,
+            "total_positions": num_positions,
+            "elapsed_sec": elapsed_sec,
+            "positions_per_sec": pos_per_sec,
+            "games_per_hour": games_per_hr,
+            "peak_vram_mb": peak_vram,
+        }
+        results.append(item)
+        print(
+            f"   Workers: {w} | Elapsed: {elapsed_sec:5.2f}s | "
+            f"Positions: {pos_per_sec:5.2f} pos/s | Games/hr: {games_per_hr:5.1f} | "
+            f"Peak VRAM: {peak_vram:5.1f} MB"
+        )
+
+    return results
+
+
 if __name__ == "__main__":
-    print("=== CoVayAI Self-Play Pipeline Benchmarks (P0) ===")
+    print("=== CoVayAI Self-Play Pipeline Benchmarks (P0 & P4) ===")
     run_pipeline_benchmarks()
+    benchmark_parallel_selfplay_throughput(board_size=9, num_games=2, num_simulations=16, num_workers_list=[1, 2])
+

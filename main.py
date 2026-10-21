@@ -98,6 +98,9 @@ class PipelineConfig:
     resign_disable_frac: float = default_cfg.RESIGN_DISABLE_FRAC
     games_per_iter: int = default_cfg.GAMES_PER_ITER
     adjudicate_truncated: Optional[bool] = None
+    num_workers: int = 1
+    infer_batch_size: int = default_cfg.INFER_BATCH_SIZE
+    infer_max_wait_ms: float = 2.0
 
     # Training
     optimizer: str = default_cfg.OPTIMIZER
@@ -131,6 +134,10 @@ class PipelineConfig:
             raise ValueError(f"board_size must be >= 3, got {self.board_size}")
         if self.games_per_iter < 1:
             raise ValueError(f"games_per_iter must be >= 1, got {self.games_per_iter}")
+        if self.num_workers < 1:
+            raise ValueError(f"num_workers must be >= 1, got {self.num_workers}")
+        if self.infer_batch_size < 1:
+            raise ValueError(f"infer_batch_size must be >= 1, got {self.infer_batch_size}")
         if self.num_sims < 1:
             raise ValueError(f"num_sims must be >= 1, got {self.num_sims}")
         if self.batch_size < 1:
@@ -381,6 +388,10 @@ class AlphaZeroPipeline:
             progress_bar=self.config.progress_bar,
             game_callback=on_game_finish,
             adjudicate_truncated=self.config.adjudicate_truncated,
+            num_workers=self.config.num_workers,
+            max_batch_size=self.config.infer_batch_size,
+            max_wait_ms=self.config.infer_max_wait_ms,
+            use_amp=self.config.use_amp and self.device.type == "cuda",
         )
 
         # Save buffer once per iteration to avoid excessive I/O bottleneck
@@ -576,6 +587,8 @@ def main() -> None:
     parser.add_argument("--opening-plies", type=int, default=default_cfg.OPENING_PLIES, help="Opening plies with tau=1 in Arena")
     parser.add_argument("--board-size", type=int, default=default_cfg.BOARD_SIZE, help="Board size")
     parser.add_argument("--komi", type=float, default=None, help="Komi compensation for White (default: 0.5 for <=7x7, 7.5 for >=9x9)")
+    parser.add_argument("--num-workers", type=int, default=default_cfg.NUM_WORKERS, help="Number of parallel self-play workers")
+    parser.add_argument("--infer-batch-size", type=int, default=default_cfg.INFER_BATCH_SIZE, help="Maximum batch size for GPU inference server")
     parser.add_argument("--checkpoint-dir", type=str, default="checkpoints", help="Directory to save checkpoints")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu", help="Device")
     parser.add_argument("--resign-threshold", type=float, default=default_cfg.RESIGN_THRESHOLD, help="Threshold below which MCTS resigns")
@@ -612,6 +625,8 @@ def main() -> None:
         gating=args.gating,
         force_new=args.force_new,
         seed=args.seed,
+        num_workers=args.num_workers,
+        infer_batch_size=args.infer_batch_size,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

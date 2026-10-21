@@ -418,3 +418,28 @@
   - Hàm `predict` ủy quyền trực tiếp qua `predict_batch`, bảo đảm 100% tính nhất quán toán học.
 - [x] **Toàn Bộ 128/128 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 15 test modules trong 24.80 giây.
+
+### Phase 25: Lộ Trình 19×19 — PR 7: Multi-Process Actor Inference Queue & Dynamic Batching (Phase P4) [HOÀN THÀNH - 134/134 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_selfplay/test_inference_server.py`, `tests/test_pipeline.py`)**:
+  - Xây dựng 6 bài kiểm thử máy chủ suy luận đa tiến trình:
+    - `test_batched_inference_server_single_client`: Khách hàng đơn lẻ gửi qua `InferenceClient` nhận kết quả đồng nhất với `model.predict()` trực tiếp.
+    - `test_batched_inference_server_multi_client_dynamic_batching`: 4 clients gửi yêu cầu đồng thời, gom batch động thành công với 0 crosstalk, 0 dropped requests.
+    - `test_batched_inference_server_with_real_alphazero_net`: Máy chủ gom batch tích hợp mượt mà với mô hình PyTorch thực tế `AlphaZeroNet`.
+    - `test_actor_pool_multiprocess_selfplay`: Bể tiến trình `SelfPlayActorPool` sinh ván tự chơi song song an toàn qua `multiprocessing.get_context('spawn')`, không gây deadlock, hạt giống độc lập per-worker.
+    - `test_generate_selfplay_games_num_workers_parameter`: Hàm `generate_selfplay_games` tự động chuyển tiếp sang `SelfPlayActorPool` khi `num_workers > 1`, duy trì tương thích 100% với luồng tuần tự (`num_workers=1`).
+    - `test_pipeline_parallel_workers`: Vòng lặp huấn luyện toàn diện End-to-End (`AlphaZeroPipeline`) vận hành trơn tru với nhiều worker song song.
+- [x] **Kiến Trúc Centralized Batched Inference Server & Client Proxy (`selfplay/inference_server.py`)**:
+  - `BatchedInferenceServer`: Chạy trên tiến trình/luồng quản lý GPU CUDA; thu thập yêu cầu từ nhiều worker qua hàng đợi IPC, gom batch động theo `max_batch_size` và `max_wait_ms`, thực thi `model.predict_batch(..., use_amp=...)` và điều hướng kết quả chính xác về từng worker tương ứng.
+  - `InferenceClient`: Cung cấp giao diện chuẩn `.predict(state_features, legal_moves_mask)` tương thích 100% với `AlphaZeroNet`, cho phép MCTS và `play_selfplay_game` sử dụng mà không cần sửa đổi bất kỳ dòng mã nào.
+  - Cơ chế an toàn lỗi: Xử lý ngoại lệ, truyền exception ngược về client thay vì treo tiến trình; shutdown sạch sẽ bằng sentinel pill.
+- [x] **Quản Lý Bể Tiến Trình Song Song Chuẩn Windows & CUDA (`selfplay/actor_pool.py`)**:
+  - Sử dụng `multiprocessing.get_context("spawn")` an toàn tuyệt đối trên Windows, tránh lỗi phân mảnh CUDA context giữa các tiến trình con.
+  - Cấp phát seed độc lập `seed + worker_id * 10007 + 1` cho mỗi worker, bảo đảm tính đa dạng của các ván cờ tự đấu.
+  - Giám sát sức khỏe tiến trình (`is_alive()`), bắt lỗi và giải phóng tài nguyên an toàn trong khối context manager `with SelfPlayActorPool(...)`.
+- [x] **Tích Hợp Vào Pipeline & Giao Diện Dòng Lệnh (`main.py`, `selfplay/worker.py`, `benchmarks/bench_pipeline.py`)**:
+  - Bổ sung tham số `--num-workers` và `--infer-batch-size` vào CLI và `PipelineConfig`.
+  - Mặc định `num_workers=1` cho các bài test nhanh, sẵn sàng mở rộng đa worker cho huấn luyện quy mô lớn.
+  - Mở rộng bộ benchmark `benchmarks/bench_pipeline.py` với hàm `benchmark_parallel_selfplay_throughput` đo đạc thông lượng đa worker thực tế.
+- [x] **Toàn Bộ 134/134 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 16 test modules trong 21.79 giây.
+

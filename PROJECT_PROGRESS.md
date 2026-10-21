@@ -695,4 +695,24 @@
   - Thử nghiệm mô hình `checkpoint_iter_5.pt` trước `CaptureHeuristicModel`: Đạt tỷ lệ thắng **50.0%** (3/6 ván, CI: [0.50, 0.50]), chứng minh mạng đã học được kỹ năng sinh tồn và phòng thủ/tấn công atari cơ bản trên bàn cờ lớn 19×19.
   - Thử nghiệm trước `RandomModel`: Đạt tỷ lệ thắng **33.3%** (2/6 ván, CI: [0.00, 0.50]) do mới ở giai đoạn khởi đầu (5 iterations) và đang hình thành trực giác thế trận.
 
+### Phase 40: Chiến Dịch Huấn Luyện 19×19 Dài Hạn (Iterations 6 $\to$ 20) [HOÀN THÀNH - 199/199 Tests Passed]
+- [x] **Mục tiêu**: Tiếp tục mở rộng chiến dịch huấn luyện từ Iteration 5 lên Iteration 20 (thêm 15 iterations) trên bàn cờ 19×19 để mô hình định hình chiến thuật sâu, tích lũy mẫu thế trận quy mô lớn.
+- [x] **Cấu hình & Vận Hành Thực Nghiệm**:
+  - Checkpoint thư mục: `checkpoints/pilot19_eval` (kế thừa liên tục từ Iteration 5 lên Iteration 20).
+  - Vòng lặp: Thêm 15 iterations (Iterations 6 $\to$ 20), sinh thêm 90 ván cờ 19×19 hoàn tất (tổng 120 ván qua 20 iterations).
+  - MCTS: 64 simulations/nước, Paired Arena 4 ván (64 sims) mỗi iteration.
+  - Tối ưu: Channels-Last (NHWC) + Replay Buffer nén bit-packed (8.5×, tệp `buffer.pkl` chỉ 21.6 MB cho 14,242 mẫu) + Adaptive training steps + Safe Stop.
+- [x] **Kết Quả Đo Lường Thông Lượng & Kinh Tế Thực Tế (`cost_report.json`)**:
+  - Thời gian huấn luyện đợt 2: **1 giờ 23.8 phút** (1.3979 giờ) trên GPU NVIDIA RTX 3050 Laptop.
+  - Tổng số mẫu thu thập mới: **10,718 mẫu 19×19** sạch (tổng tích lũy trong buffer: **14,242 mẫu**).
+  - Tổng số lượt đánh giá mạng (NN evaluations): **685,952 lượt**.
+  - Thông lượng trạng thái duy trì ổn định cao: **7,667.1 positions / giờ**.
+  - Thông lượng ván đấu: **64.38 games / giờ**.
+  - Chi phí điện ước tính đợt 2: **$0.014 USD** (~350 VND cho 90 ván 19×19).
+  - Đơn giá kinh tế: **$0.1553 USD / 1,000 ván 19×19** (~3,880 VND / 1,000 ván).
+- [x] **Kiểm Định Đối Thủ Chuẩn Cố Định (`FixedBaselineEvaluator`)**:
+  - Mô hình `checkpoint_iter_20.pt` vs `CaptureHeuristicModel`: Tỷ lệ thắng **50.0%** (3/6 ván, Paired Bootstrap 95% CI: `[0.50, 0.50]`).
+  - Mô hình `checkpoint_iter_20.pt` vs `RandomModel`: Tỷ lệ thắng **33.3%** (2/6 ván, Paired Bootstrap 95% CI: `[0.00, 0.50]`).
+  - Tính ổn định: Value Loss giữ vững ở mức cực thấp $\approx 0.043$, không bùng nổ gradient, sai số hiệu chuẩn Calibration Error $< 0.003$.
+
 

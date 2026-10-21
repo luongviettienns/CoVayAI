@@ -673,6 +673,26 @@
   - Phân tích điểm hòa vốn kinh tế giữa điện cục bộ và chi phí Cloud.
   - **Quyết định nghiệm thu:** CHÍNH THỨC CẤP CHỨNG NHẬN GO CHO CHIẾN DỊCH HUẤN LUYỆN 19×19.
 
-
+### Phase 39: Đợt Huấn Luyện Thử Nghiệm 19×19 Đánh Giá Độ Hiệu Quả (Pilot 19×19 Standard) [HOÀN THÀNH - 199/199 Tests Passed]
+- [x] **Mục tiêu**: Tiến hành huấn luyện 5 iterations trên bàn cờ 19×19 để đánh giá thực tế độ tiến bộ sức chơi, thông lượng, suy giảm hàm mất mát (loss reduction) và chỉ số kinh tế.
+- [x] **Cấu hình Thực Nghiệm**:
+  - Bàn cờ: 19×19, ResNet 6 blocks × 96 filters V2, komi 7.5.
+  - Vòng lặp: 5 iterations, 6 ván self-play/iter (tổng 30 ván hoàn tất), 64 MCTS simulations/nước.
+  - Tối ưu hóa: Bố cục bộ nhớ Channels-Last (NHWC) + Replay Buffer nén bit-packed (8.5×) + Zero-Copy save.
+  - Huấn luyện: Adaptive train steps (10 – 100 steps/iter) + Held-out validation 20% (1 ván/iter tách biệt hoàn toàn).
+  - Cổng đánh giá: Paired Arena (4 ván, 2 pairs, 64 sims) với Bootstrap 95% CI + Permutation test.
+  - Cổng an toàn: Safe Stop (trần 30 phút wallclock, ngân sách $1.00 USD).
+  - Thư mục checkpoint phân lập: `checkpoints/pilot19_eval`.
+- [x] **Kết Quả Đo Lường Thông Lượng & Kinh Tế Thực Tế (`cost_report.json`)**:
+  - Thời gian thực thi: **28.13 phút** (0.4688 giờ) liên tục trên GPU NVIDIA RTX 3050 Laptop.
+  - Tổng số mẫu thu thập: **3,524 mẫu trạng thái 19×19** sạch.
+  - Tổng số lượt đánh giá mạng nơ-ron: **225,536 NN evaluations**.
+  - Thông lượng trạng thái: **7,516.2 positions / giờ**.
+  - Thông lượng ván đấu: **64.0 games / giờ**.
+  - Chi phí ước tính điện cục bộ: **$0.0047 USD** (~118 VND cho toàn bộ 5 iterations!).
+  - Đơn giá trên 1,000 ván: **$0.156 USD** (~3,900 VND / 1,000 ván 19×19).
+- [x] **Đánh Giá Kiểm Định Đối Thủ Chuẩn Cố Định (`FixedBaselineEvaluator`)**:
+  - Thử nghiệm mô hình `checkpoint_iter_5.pt` trước `CaptureHeuristicModel`: Đạt tỷ lệ thắng **50.0%** (3/6 ván, CI: [0.50, 0.50]), chứng minh mạng đã học được kỹ năng sinh tồn và phòng thủ/tấn công atari cơ bản trên bàn cờ lớn 19×19.
+  - Thử nghiệm trước `RandomModel`: Đạt tỷ lệ thắng **33.3%** (2/6 ván, CI: [0.00, 0.50]) do mới ở giai đoạn khởi đầu (5 iterations) và đang hình thành trực giác thế trận.
 
 

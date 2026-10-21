@@ -1,6 +1,6 @@
 """AlphaZero Training Pipeline with Dual-Head Loss, AMP (FP16), AdamW, and MultiStepLR."""
 
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 import os
 import random
 import subprocess
@@ -9,6 +9,52 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from selfplay.replay_buffer import ReplayBuffer
+
+
+def compute_adaptive_train_steps(
+    new_samples: int,
+    steps_per_sample: float = 0.5,
+    min_steps: int = 20,
+    max_steps: int = 400,
+) -> int:
+    """
+    Compute training steps dynamically scaled by newly collected samples.
+    Prevents wasteful overtraining on small initial buffers while ensuring sufficient
+    gradient updates as fresh experience arrives.
+    """
+    if new_samples <= 0:
+        return min_steps
+    scaled = int(round(new_samples * steps_per_sample))
+    return max(min_steps, min(scaled, max_steps))
+
+
+def split_games_train_val(
+    games: List[Any],
+    val_ratio: float = 0.15,
+    seed: Optional[int] = None,
+) -> Tuple[List[Any], List[Any]]:
+    """
+    Partition games into disjoint training and held-out validation sets by complete games.
+    Guarantees zero data leakage across game trajectories.
+    """
+    if not games or val_ratio <= 0.0:
+        return list(games), []
+    if val_ratio >= 1.0:
+        return [], list(games)
+
+    rng = random.Random(seed) if seed is not None else random.Random()
+    indices = list(range(len(games)))
+    rng.shuffle(indices)
+
+    num_val = max(1, int(round(len(games) * val_ratio)))
+    if num_val >= len(games) and len(games) > 1:
+        num_val = len(games) - 1
+
+    val_idx_set = set(indices[:num_val])
+    train_games = [g for i, g in enumerate(games) if i not in val_idx_set]
+    val_games = [g for i, g in enumerate(games) if i in val_idx_set]
+    return train_games, val_games
+
 
 class Trainer:
     """Orchestrates network optimization, loss computation, and checkpointing for AlphaZero."""
@@ -156,11 +202,16 @@ class Trainer:
     def train_iteration(
         self,
         replay_buffer: ReplayBuffer,
-        steps: int = 400,
+        steps: Optional[int] = 400,
         batch_size: int = 256,
         augment: bool = True,
         progress_bar: bool = False,
         use_aux: Optional[bool] = None,
+        adaptive_steps: bool = False,
+        new_samples: Optional[int] = None,
+        steps_per_sample: float = 0.5,
+        min_steps: int = 20,
+        max_steps: int = 400,
     ) -> Dict[str, float]:
         """Train over K steps sampled from the replay buffer and return average metrics."""
         if len(replay_buffer) == 0:
@@ -170,7 +221,22 @@ class Trainer:
                 "value_loss": 0.0,
                 "ownership_loss": 0.0,
                 "score_loss": 0.0,
+                "actual_steps": 0,
+                "effective_epochs": 0.0,
             }
+
+        if adaptive_steps or (steps is None and new_samples is not None):
+            actual_steps = compute_adaptive_train_steps(
+                new_samples=new_samples or 0,
+                steps_per_sample=steps_per_sample,
+                min_steps=min_steps,
+                max_steps=max_steps,
+            )
+        else:
+            actual_steps = steps if steps is not None else 400
+
+        actual_steps = max(1, actual_steps)
+        effective_epochs = float(actual_steps * batch_size) / max(1, len(replay_buffer))
 
         if use_aux is None:
             use_aux = getattr(self.model, "aux_heads", False)
@@ -186,7 +252,7 @@ class Trainer:
         own_loss_accum = 0.0
         score_loss_accum = 0.0
 
-        iterator = range(steps)
+        iterator = range(actual_steps)
         pbar = None
         if progress_bar and tqdm is not None:
             pbar = tqdm(iterator, desc="Training", unit="step", dynamic_ncols=True)
@@ -225,11 +291,102 @@ class Trainer:
                 })
 
         return {
-            "total_loss": total_loss_accum / steps,
-            "policy_loss": policy_loss_accum / steps,
-            "value_loss": value_loss_accum / steps,
-            "ownership_loss": own_loss_accum / steps,
-            "score_loss": score_loss_accum / steps,
+            "total_loss": total_loss_accum / actual_steps,
+            "policy_loss": policy_loss_accum / actual_steps,
+            "value_loss": value_loss_accum / actual_steps,
+            "ownership_loss": own_loss_accum / actual_steps,
+            "score_loss": score_loss_accum / actual_steps,
+            "actual_steps": actual_steps,
+            "effective_epochs": round(effective_epochs, 4),
+        }
+
+    @torch.inference_mode()
+    def evaluate(
+        self,
+        val_buffer: ReplayBuffer,
+        batch_size: int = 256,
+        max_batches: Optional[int] = None,
+    ) -> Dict[str, float]:
+        """
+        Evaluate model on held-out validation buffer without data augmentation or gradients.
+        Computes validation loss, policy KL divergence, policy entropy, and value calibration.
+        """
+        if len(val_buffer) == 0:
+            return {
+                "val_loss": 0.0,
+                "val_policy_loss": 0.0,
+                "val_value_loss": 0.0,
+                "policy_kl": 0.0,
+                "policy_entropy": 0.0,
+                "value_calibration": 0.0,
+            }
+
+        self.model.eval()
+        total_loss_accum = 0.0
+        p_loss_accum = 0.0
+        v_loss_accum = 0.0
+        kl_accum = 0.0
+        entropy_accum = 0.0
+        calib_accum = 0.0
+
+        total_samples = len(val_buffer)
+        num_batches = max(1, (total_samples + batch_size - 1) // batch_size)
+        if max_batches is not None:
+            num_batches = min(num_batches, max_batches)
+
+        has_aux = getattr(self.model, "aux_heads", False)
+
+        for _ in range(num_batches):
+            if has_aux:
+                states, target_pis, target_zs, _, _, _ = val_buffer.sample_batch(
+                    batch_size=min(batch_size, total_samples), augment=False, return_aux=True
+                )
+            else:
+                states, target_pis, target_zs = val_buffer.sample_batch(
+                    batch_size=min(batch_size, total_samples), augment=False
+                )
+
+            states = states.to(self.device)
+            target_pis = target_pis.to(self.device)
+            target_zs = target_zs.to(self.device)
+
+            if has_aux:
+                policy_logits, value, _, _ = self.model(states, return_aux=True)
+            else:
+                policy_logits, value = self.model(states)
+
+            loss_v = F.mse_loss(value, target_zs)
+            log_probs = F.log_softmax(policy_logits, dim=-1)
+            probs = F.softmax(policy_logits, dim=-1)
+            loss_p = -(target_pis * log_probs).sum(dim=-1).mean()
+
+            # KL(pi_target || p_pred) = sum(pi * (log(pi + eps) - log(p + eps)))
+            eps = 1e-8
+            target_log_pis = torch.log(target_pis + eps)
+            kl = (target_pis * (target_log_pis - log_probs)).sum(dim=-1).mean()
+
+            # Policy entropy = -sum(p * log(p))
+            entropy = -(probs * log_probs).sum(dim=-1).mean()
+
+            # Value calibration = |mean(value) - mean(target_zs)|
+            calib = torch.abs(value.mean() - target_zs.mean())
+
+            total_loss = loss_v + loss_p
+
+            total_loss_accum += float(total_loss.item())
+            p_loss_accum += float(loss_p.item())
+            v_loss_accum += float(loss_v.item())
+            kl_accum += float(kl.item())
+            entropy_accum += float(entropy.item())
+            calib_accum += float(calib.item())
+
+        return {
+            "val_loss": total_loss_accum / num_batches,
+            "val_policy_loss": p_loss_accum / num_batches,
+            "val_value_loss": v_loss_accum / num_batches,
+            "policy_kl": kl_accum / num_batches,
+            "policy_entropy": entropy_accum / num_batches,
+            "value_calibration": calib_accum / num_batches,
         }
 
     def save_checkpoint(

@@ -56,3 +56,10 @@ WIN_THRESHOLD: float = 0.55
 
 # --- Lưu trữ ---
 CHECKPOINT_EVERY: int = 1  # lưu mỗi iteration để resume được
+
+# --- Huấn Luyện Thích Ứng & Kiểm Định Giữ Lại (Compute-Aware Training & Held-Out Validation) ---
+ADAPTIVE_TRAIN_STEPS: bool = False
+VAL_RATIO: float = 0.0
+STEPS_PER_SAMPLE: float = 0.5
+MIN_TRAIN_STEPS: int = 20
+MAX_TRAIN_STEPS: int = 400

@@ -24,7 +24,7 @@ import torch
 from nn.model import AlphaZeroNet
 from selfplay.replay_buffer import ReplayBuffer
 from selfplay.worker import generate_selfplay_games
-from train.trainer import Trainer
+from train.trainer import Trainer, compute_adaptive_train_steps, split_games_train_val
 from arena.match import Arena, ArenaResult
 from arena.elo import EloTracker
 import config as default_cfg
@@ -119,6 +119,13 @@ class PipelineConfig:
     ownership_coef: float = default_cfg.OWNERSHIP_COEF
     score_coef: float = default_cfg.SCORE_COEF
 
+    # Compute-Aware Training & Held-Out Validation
+    adaptive_train_steps: bool = default_cfg.ADAPTIVE_TRAIN_STEPS
+    val_ratio: float = default_cfg.VAL_RATIO
+    steps_per_sample: float = default_cfg.STEPS_PER_SAMPLE
+    min_train_steps: int = default_cfg.MIN_TRAIN_STEPS
+    max_train_steps: int = default_cfg.MAX_TRAIN_STEPS
+
     # Arena & Gating
     arena_games: int = default_cfg.ARENA_GAMES
     arena_sims: int = default_cfg.ARENA_SIMS
@@ -155,6 +162,14 @@ class PipelineConfig:
             raise ValueError(f"resign_disable_frac must be between 0 and 1, got {self.resign_disable_frac}")
         if self.gating and self.arena_games < 1:
             raise ValueError(f"arena_games must be >= 1 when gating is enabled, got {self.arena_games}")
+        if not (0.0 <= self.val_ratio < 1.0):
+            raise ValueError(f"val_ratio must be in [0.0, 1.0), got {self.val_ratio}")
+        if self.steps_per_sample <= 0:
+            raise ValueError(f"steps_per_sample must be > 0, got {self.steps_per_sample}")
+        if self.min_train_steps < 1:
+            raise ValueError(f"min_train_steps must be >= 1, got {self.min_train_steps}")
+        if self.max_train_steps < self.min_train_steps:
+            raise ValueError(f"max_train_steps must be >= min_train_steps, got {self.max_train_steps}")
 
 
 class AlphaZeroPipeline:
@@ -627,6 +642,11 @@ def main() -> None:
     parser.add_argument("--aux-heads", action="store_true", default=default_cfg.AUX_HEADS, help="Enable ownership and score auxiliary supervision heads")
     parser.add_argument("--ownership-coef", type=float, default=default_cfg.OWNERSHIP_COEF, help="Loss coefficient for auxiliary ownership prediction")
     parser.add_argument("--score-coef", type=float, default=default_cfg.SCORE_COEF, help="Loss coefficient for auxiliary score prediction")
+    parser.add_argument("--adaptive-train-steps", action="store_true", default=default_cfg.ADAPTIVE_TRAIN_STEPS, help="Enable dynamic train steps scaled by new sample volume")
+    parser.add_argument("--val-ratio", type=float, default=default_cfg.VAL_RATIO, help="Fraction of selfplay games held out for validation (0.0 to disable)")
+    parser.add_argument("--steps-per-sample", type=float, default=default_cfg.STEPS_PER_SAMPLE, help="Scaling factor from new samples to training steps")
+    parser.add_argument("--min-train-steps", type=int, default=default_cfg.MIN_TRAIN_STEPS, help="Minimum training steps per iteration under adaptive training")
+    parser.add_argument("--max-train-steps", type=int, default=default_cfg.MAX_TRAIN_STEPS, help="Maximum training steps per iteration under adaptive training")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
     parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
     parser.set_defaults(resume=True, progress_bar=True, gating=True)
@@ -663,6 +683,11 @@ def main() -> None:
         aux_heads=args.aux_heads,
         ownership_coef=args.ownership_coef,
         score_coef=args.score_coef,
+        adaptive_train_steps=args.adaptive_train_steps,
+        val_ratio=args.val_ratio,
+        steps_per_sample=args.steps_per_sample,
+        min_train_steps=args.min_train_steps,
+        max_train_steps=args.max_train_steps,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

@@ -559,6 +559,23 @@
 - [x] **Toàn Bộ 169/169 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 21 test modules trong 18.99 giây.
 
+### Phase 32: Master Plan V4 — PR 2: Compute-Aware Training Steps & Held-Out Games Validation (P8 & C3) [HOÀN THÀNH - 175/175 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_train/test_compute_aware_trainer.py`)**:
+  - Xây dựng 6 bài kiểm thử chuyên sâu về tối ưu số bước huấn luyện và kiểm định không rò rỉ dữ liệu:
+    - `test_compute_adaptive_train_steps_scaling`: Kiểm chứng hàm `compute_adaptive_train_steps` tự động co giãn số bước huấn luyện theo số mẫu mới với hệ số `steps_per_sample` (ví dụ: 100 mẫu $\to$ 50 steps), đồng thời tuân thủ ngưỡng an toàn `min_steps` (20) và `max_steps` (400).
+    - `test_split_games_train_val_no_data_leakage`: Kiểm chứng hàm `split_games_train_val` phân tách tập train và validation theo **từng ván đấu hoàn chỉnh (Whole-Game Partitioning)**; tập seed và quỹ đạo trạng thái giữa 2 tập hoàn toàn tách biệt ($0\%$ overlap), triệt tiêu hoàn toàn lỗi rò rỉ thông tin (data leakage).
+    - `test_trainer_train_iteration_adaptive_steps`: Tích hợp cờ `adaptive_steps=True` vào `Trainer.train_iteration`, thực thi đúng số bước tối ưu theo lượng mẫu mới và báo cáo chỉ số `effective_epochs = actual_steps * batch_size / buffer_size`.
+    - `test_trainer_evaluate_held_out_metrics`: Triển khai hàm `Trainer.evaluate()` trên bộ đệm validation độc lập, tính toán chi tiết `val_loss`, `val_policy_loss`, `val_value_loss`, `policy_kl` (KL divergence giữa search policy và predicted policy), `policy_entropy` và `value_calibration` ($|E[v] - E[z]|$).
+    - `test_trainer_evaluate_empty_buffer_returns_zeros`: Xử lý an toàn khi bộ đệm validation trống, trả về các chỉ số bằng 0.0 mà không gây crash.
+    - `test_pipeline_config_includes_adaptive_training_flags`: Tích hợp các cờ siêu tham số `--adaptive-train-steps`, `--val-ratio`, `--steps-per-sample`, `--min-train-steps`, `--max-train-steps` vào `PipelineConfig` và CLI parser.
+- [x] **Tối Ưu Huấn Luyện Thích Ứng & Kiểm Định Giữ Lại (`train/trainer.py`, `config.py`, `main.py`)**:
+  - Tách rời tập huấn luyện chính `self.buffer` và tập kiểm định `self.val_buffer` trong `AlphaZeroPipeline`.
+  - Phân luồng các ván đấu hoàn chỉnh vào `self.val_buffer` theo tỷ lệ cấu hình `val_ratio`.
+  - Tự động đánh giá và hiển thị chỉ số validation loss, policy KL divergence và value calibration sau mỗi iteration huấn luyện.
+- [x] **Toàn Bộ 175/175 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 22 test modules trong 19.86 giây.
+
+
 
 
 

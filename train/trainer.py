@@ -193,6 +193,7 @@ class Trainer:
 
         checkpoint = {
             "iteration": iteration,
+            "architecture_version": getattr(self.model, "architecture_version", 2),
             "global_step": self.global_step,
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -210,7 +211,10 @@ class Trainer:
     def load_checkpoint(self, filepath: str) -> int:
         """Load model, optimizer, scheduler, scaler, and RNG state from file and return saved iteration."""
         checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        if hasattr(self.model, "load_compatible_weights"):
+            self.model.load_compatible_weights(checkpoint["model_state_dict"])
+        else:
+            self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if "scheduler_state_dict" in checkpoint:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])

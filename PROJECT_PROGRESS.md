@@ -364,3 +364,24 @@
   - Arena: Hỗ trợ tham số `adjudicate_truncated: bool = True` (mặc định) để tiếp tục tính điểm phân định thắng thua, hoặc xử Hòa (0.0) khi phân xử độc lập.
 - [x] **Toàn Bộ 103/103 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 12 test modules trong 8.04 giây.
+
+### Phase 22: Lộ Trình 19×19 — PR 4: Neural Network Spatial Heads Dùng Chung 9×9 / 13×13 / 19×19 (Phase P2) [HOÀN THÀNH - 109/109 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_nn/test_size_independent_model.py`)**:
+  - Xây dựng 6 bài kiểm thử kiến trúc độc lập kích thước bàn cờ:
+    - `test_single_model_forward_across_sizes`: Một thực thể mô hình duy nhất forward thành công trên các cỡ bàn $9\times 9, 13\times 13, 19\times 19$, trả về đúng shape `(B, N*N+1)` và `(B, 1)` với giá trị nằm trong $[-1, 1]$.
+    - `test_single_model_backward_gradients_across_sizes`: Lan truyền ngược và kiểm tra gradients hữu hạn (finite), khác 0 trên toàn bộ các tham số của mạng cho mọi cỡ bàn.
+    - `test_state_dict_has_no_board_size_dependence`: Xác minh không có bất kỳ tensor trọng số nào trong `state_dict()` phụ thuộc vào $N$ (không chứa các chiều phụ thuộc kích thước bàn như 81, 82, 169, 170, 361, 362).
+    - `test_predict_and_predict_batch_across_sizes`: API suy luận `predict` và `predict_batch` hoạt động trơn tru với legal moves mask trên các kích cỡ bàn khác nhau.
+    - `test_d4_symmetry_preserves_pass_action`: Phép biến đổi D4 bảo toàn logit pass và giá trị value xấp xỉ bất biến; hàm `apply_random_symmetry` giữ nguyên vẹn xác suất nước pass ở chỉ số cuối $N^2$.
+    - `test_migration_loads_backbone_from_legacy_checkpoint`: Kiểm tra hàm `load_compatible_weights` trích xuất an toàn trọng số backbone từ checkpoint kiến trúc cũ và khởi tạo ngẫu nhiên các heads mới kèm cảnh báo rõ ràng.
+- [x] **Tái Cấu Trúc Dual Heads Độc Lập Kích Thước Bàn Cờ (`nn/model.py`)**:
+  - **Spatial Policy Head**: Thay thế lớp kết nối đầy đủ `policy_fc(2*N*N -> N*N+1)` bằng Conv 1×1 `policy_conv(num_filters, 32)` $\to$ BN $\to$ Conv 1×1 `policy_spatial(32, 1)` $\to$ spatial logits `[B, N*N]`.
+  - **Pass Head Toàn Cục**: Nhánh Pass độc lập `pass_conv(num_filters, 16)` $\to$ BN $\to$ Global Average Pooling `[B, 16]` $\to$ `pass_fc(16, 1)` $\to$ pass logit `[B, 1]`. Ghép nối thành policy logits `[B, N*N+1]`.
+  - **Size-Independent Value Head**: Thay thế `value_fc1(N*N -> 128)` bằng `value_conv(num_filters, 32)` $\to$ BN $\to$ Global Average Pooling `[B, 32]` $\to$ MLP (`Linear(32, 128)` $\to$ ReLU $\to$ `Linear(128, 1)` $\to$ tanh).
+  - Bổ sung `architecture_version = 2` và cơ chế nạp tương thích `load_compatible_weights`.
+- [x] **Đồng Bộ Checkpoint & Trainer (`train/trainer.py`, `tests/test_train/test_scheduler_checkpoint.py`)**:
+  - Checkpoint lưu kèm `architecture_version: 2`.
+  - Trainer tự động phát hiện và gọi `load_compatible_weights` khi khôi phục checkpoint.
+  - Test kiểm tra trọng số ứng viên bị reject hỗ trợ cả `policy_spatial.weight` và `policy_fc.weight`.
+- [x] **Toàn Bộ 109/109 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 13 test modules trong 18.09 giây.

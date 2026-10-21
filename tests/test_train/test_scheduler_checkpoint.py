@@ -297,8 +297,9 @@ def test_rejected_candidate_checkpoint_preserves_candidate_weights():
         assert best_ckpt["iteration"] == 0
 
         # Candidate weights must reflect training, NOT overwritten with best_model
-        cand_p_fc = iter_ckpt["model_state_dict"]["policy_fc.weight"]
-        best_p_fc = best_ckpt["model_state_dict"]["policy_fc.weight"]
+        p_key = "policy_spatial.weight" if "policy_spatial.weight" in iter_ckpt["model_state_dict"] else "policy_fc.weight"
+        cand_p_fc = iter_ckpt["model_state_dict"][p_key]
+        best_p_fc = best_ckpt["model_state_dict"][p_key]
         assert not torch.allclose(cand_p_fc, best_p_fc), "Rejected candidate checkpoint was improperly overwritten with old best_model!"
 
 

@@ -715,4 +715,8 @@
   - Mô hình `checkpoint_iter_20.pt` vs `RandomModel`: Tỷ lệ thắng **33.3%** (2/6 ván, Paired Bootstrap 95% CI: `[0.00, 0.50]`).
   - Tính ổn định: Value Loss giữ vững ở mức cực thấp $\approx 0.043$, không bùng nổ gradient, sai số hiệu chuẩn Calibration Error $< 0.003$.
 
-
+### Release v1.1.0: 19×19 Cost-Optimized Production Ready [HOÀN THÀNH]
+- [x] Đã hợp nhất hoàn tất nhánh `feat/19x19-training-v4` vào `main`.
+- [x] Đóng gói và gắn tag release chính thức `v1.1.0`.
+- [x] Toàn bộ 199/199 bài kiểm thử đơn vị, tích hợp và hồi quy vượt qua 100% trên nhánh `main`.
+- [x] Web Arena daemon trên cổng `8080` duy trì hoạt động liên tục, sẵn sàng phục vụ.

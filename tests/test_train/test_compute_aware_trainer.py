@@ -70,7 +70,7 @@ class TestComputeAwareTrainer:
 
     def test_trainer_train_iteration_adaptive_steps(self):
         """Verifies train_iteration executes exact adaptive steps and reports effective epochs."""
-        model = AlphaZeroNet(board_size=9, num_blocks=1, num_filters=16)
+        model = AlphaZeroNet(board_size=9, num_res_blocks=1, num_filters=16)
         trainer = Trainer(model, device=torch.device("cpu"), use_amp=False)
         buffer = ReplayBuffer(capacity=1000, board_size=9)
 
@@ -100,7 +100,7 @@ class TestComputeAwareTrainer:
 
     def test_trainer_evaluate_held_out_metrics(self):
         """Verifies held-out validation evaluation computes loss, KL, entropy, and calibration."""
-        model = AlphaZeroNet(board_size=9, num_blocks=1, num_filters=16)
+        model = AlphaZeroNet(board_size=9, num_res_blocks=1, num_filters=16)
         trainer = Trainer(model, device=torch.device("cpu"), use_amp=False)
         val_buffer = ReplayBuffer(capacity=500, board_size=9)
 
@@ -129,7 +129,7 @@ class TestComputeAwareTrainer:
 
     def test_trainer_evaluate_empty_buffer_returns_zeros(self):
         """Verifies evaluate handles an empty validation buffer gracefully."""
-        model = AlphaZeroNet(board_size=9, num_blocks=1, num_filters=16)
+        model = AlphaZeroNet(board_size=9, num_res_blocks=1, num_filters=16)
         trainer = Trainer(model, device=torch.device("cpu"), use_amp=False)
         empty_buffer = ReplayBuffer(capacity=100, board_size=9)
 

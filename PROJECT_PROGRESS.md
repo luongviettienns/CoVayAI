@@ -575,7 +575,20 @@
 - [x] **Toàn Bộ 175/175 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 22 test modules trong 19.86 giây.
 
-
-
-
+### Phase 33: Master Plan V4 — PR 3: Cost Gates, Budget Limits & Safe Stop (P11 & C6) [HOÀN THÀNH - 179/179 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_ops/test_safe_stop_and_budget.py`)**:
+  - Xây dựng 4 bài kiểm thử chuyên sâu về cổng chi phí, giới hạn ngân sách và dừng an toàn:
+    - `test_pipeline_config_budget_validation`: Xác thực tính hợp lệ của các tham số cấu hình ngân sách và thời gian (`max_budget_usd`, `max_wallclock_hours`, `gpu_price_per_hour`), từ chối nghiêm ngặt các giá trị âm bằng ngoại lệ `ValueError`.
+    - `test_check_budget_limits_trigger_safe_stop`: Kiểm chứng hàm `AlphaZeroPipeline.check_budget_limits()` phát hiện chính xác thời điểm thời gian chạy thực tế vượt ngưỡng `max_wallclock_hours` hoặc tổng chi phí tính toán vượt trần `max_budget_usd`, trả về cờ dừng `should_stop=True` kèm nguyên nhân cụ thể.
+    - `test_safe_stop_saves_checkpoint_and_cost_report`: Xác thực cơ chế Safe Stop ngắt vòng lặp đa iteration một cách có kiểm soát ngay sau iteration vừa hoàn tất; đảm bảo checkpoint được lưu nguyên tử, `latest_manifest.json` được cập nhật, và tệp báo cáo chi phí `cost_report.json` được tự động khởi tạo trong thư mục checkpoint trước khi thoát.
+    - `test_resume_after_safe_stop`: Kiểm chứng khả năng phục hồi hoàn hảo (`--resume`) sau một đợt dừng vì cạn ngân sách; pipeline nhận diện chính xác checkpoint hợp lệ gần nhất và tiếp tục quá trình huấn luyện từ iteration kế tiếp mà không làm mất mát hoặc ghi đè dữ liệu.
+- [x] **Cấu Hình & Tham Số Giới Hạn Ngân Sách (`config.py`, `main.py`)**:
+  - Bổ sung các hằng số mặc định: `MAX_BUDGET_USD: Optional[float] = None`, `MAX_WALLCLOCK_HOURS: Optional[float] = None`, `GPU_PRICE_PER_HOUR: float = 0.0`.
+  - Tích hợp các cờ CLI: `--max-budget-usd`, `--max-wallclock-hours`, `--gpu-price-per-hour` vào bộ phân tích cú pháp tham số `main()`.
+- [x] **Cơ Chế Safe Stop & Xuất Báo Cáo Chi Phí (`main.py`)**:
+  - Bổ sung bộ theo dõi tiến trình và tài nguyên: `start_time`, `total_completed_games`, `total_valid_positions`, `total_full_search_positions`, `total_nn_evals`.
+  - Triển khai phương thức `check_budget_limits()` và `save_cost_report()` tích hợp trực tiếp với module `benchmarks/cost_report.py`.
+  - Khởi tạo và phân luồng độc lập `self.val_buffer` từ `split_games_train_val` khi kích hoạt `val_ratio > 0.0`.
+- [x] **Toàn Bộ 179/179 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 23 test modules trong 51.80 giây.
 

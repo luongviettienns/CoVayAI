@@ -1,4 +1,6 @@
-"""Configuration for 9x9 AlphaZero Go engine."""
+from typing import Optional
+
+# --- Configuration for 9x9 AlphaZero Go engine ---
 
 # --- Luật cờ ---
 BOARD_SIZE: int = 9
@@ -63,3 +65,9 @@ VAL_RATIO: float = 0.0
 STEPS_PER_SAMPLE: float = 0.5
 MIN_TRAIN_STEPS: int = 20
 MAX_TRAIN_STEPS: int = 400
+
+# --- Giới Hạn Ngân Sách & Dừng An Toàn (Budget Limits & Safe Stop) ---
+MAX_BUDGET_USD: Optional[float] = None
+MAX_WALLCLOCK_HOURS: Optional[float] = None
+GPU_PRICE_PER_HOUR: float = 0.0
+

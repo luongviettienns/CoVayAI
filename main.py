@@ -17,7 +17,7 @@ import uuid
 import random
 import argparse
 from dataclasses import dataclass, asdict
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import numpy as np
 import torch
 
@@ -126,6 +126,11 @@ class PipelineConfig:
     min_train_steps: int = default_cfg.MIN_TRAIN_STEPS
     max_train_steps: int = default_cfg.MAX_TRAIN_STEPS
 
+    # Budget Limits & Safe Stop
+    max_budget_usd: Optional[float] = default_cfg.MAX_BUDGET_USD
+    max_wallclock_hours: Optional[float] = default_cfg.MAX_WALLCLOCK_HOURS
+    gpu_price_per_hour: float = default_cfg.GPU_PRICE_PER_HOUR
+
     # Arena & Gating
     arena_games: int = default_cfg.ARENA_GAMES
     arena_sims: int = default_cfg.ARENA_SIMS
@@ -170,6 +175,12 @@ class PipelineConfig:
             raise ValueError(f"min_train_steps must be >= 1, got {self.min_train_steps}")
         if self.max_train_steps < self.min_train_steps:
             raise ValueError(f"max_train_steps must be >= min_train_steps, got {self.max_train_steps}")
+        if self.max_budget_usd is not None and self.max_budget_usd < 0:
+            raise ValueError(f"max_budget_usd cannot be negative, got {self.max_budget_usd}")
+        if self.max_wallclock_hours is not None and self.max_wallclock_hours < 0:
+            raise ValueError(f"max_wallclock_hours cannot be negative, got {self.max_wallclock_hours}")
+        if self.gpu_price_per_hour < 0:
+            raise ValueError(f"gpu_price_per_hour cannot be negative, got {self.gpu_price_per_hour}")
 
 
 class AlphaZeroPipeline:
@@ -233,8 +244,13 @@ class AlphaZeroPipeline:
             aux_heads=cfg.aux_heads,
         ).to(self.device)
 
-        # Replay Buffer
+        # Replay Buffer & Validation Buffer
         self.buffer = ReplayBuffer(capacity=cfg.buffer_size, board_size=cfg.board_size)
+        self.val_buffer: Optional[ReplayBuffer] = (
+            ReplayBuffer(capacity=max(1000, int(cfg.buffer_size * cfg.val_ratio)), board_size=cfg.board_size)
+            if cfg.val_ratio > 0.0
+            else None
+        )
 
         # Trainer for candidate model
         self.trainer = Trainer(
@@ -252,6 +268,13 @@ class AlphaZeroPipeline:
 
         # Elo Tracker
         self.elo_tracker = EloTracker(initial_rating=1000.0)
+
+        # Tracking metrics for audit & budget gates
+        self.start_time: float = time.time()
+        self.total_completed_games: int = 0
+        self.total_valid_positions: int = 0
+        self.total_full_search_positions: int = 0
+        self.total_nn_evals: int = 0
 
         # Determine starting iteration and resume state if requested
         self.start_iteration = 1
@@ -383,6 +406,41 @@ class AlphaZeroPipeline:
         for param_group, lr in zip(self.trainer.optimizer.param_groups, current_lrs):
             param_group["lr"] = lr
 
+    def check_budget_limits(self) -> Tuple[bool, Optional[str]]:
+        """Check if elapsed wallclock hours or accumulated compute budget exceeds limits."""
+        elapsed_seconds = time.time() - self.start_time
+        elapsed_hours = elapsed_seconds / 3600.0
+
+        if self.config.max_wallclock_hours is not None:
+            if elapsed_hours >= self.config.max_wallclock_hours:
+                return True, f"max_wallclock_hours limit reached ({elapsed_hours:.4f}h >= {self.config.max_wallclock_hours:.4f}h)"
+
+        if self.config.max_budget_usd is not None:
+            estimated_cost = elapsed_hours * self.config.gpu_price_per_hour
+            if estimated_cost >= self.config.max_budget_usd:
+                return True, f"max_budget_usd limit reached (${estimated_cost:.4f} >= ${self.config.max_budget_usd:.4f})"
+
+        return False, None
+
+    def save_cost_report(self) -> str:
+        """Generate and save benchmarks/cost_report.py audit JSON to checkpoint directory."""
+        from benchmarks.cost_report import generate_cost_report
+        elapsed_hours = (time.time() - self.start_time) / 3600.0
+        cost_data = {
+            "total_running_hours": round(elapsed_hours, 6),
+            "gpu_hours": round(elapsed_hours, 6) if self.device.type == "cuda" else 0.0,
+            "gpu_price_per_hour": self.config.gpu_price_per_hour,
+            "completed_games": self.total_completed_games,
+            "valid_training_positions": self.total_valid_positions,
+            "full_search_positions": self.total_full_search_positions,
+            "nn_evals": self.total_nn_evals,
+            "board_size": self.config.board_size,
+            "network_arch": f"resnet_{self.config.num_res_blocks}b_{self.config.num_filters}f",
+        }
+        report_path = os.path.join(self.config.checkpoint_dir, "cost_report.json")
+        generate_cost_report(cost_data, output_path=report_path)
+        return report_path
+
     def run_iteration(self, iteration: int) -> Dict[str, Any]:
         """Execute one complete AlphaZero iteration with dynamic training steps and optimizer synchronization.
 
@@ -397,11 +455,12 @@ class AlphaZeroPipeline:
         print(f"[*] Step 1/3: Self-play ({self.config.games_per_iter} games, {self.config.num_sims} sims, komi {self.config.komi})...")
         self.best_model.eval()
 
-        buffer_path = os.path.join(self.config.checkpoint_dir, "buffer.pkl")
-
+        completed_games = []
         def on_game_finish(game_idx, samples):
-            # Push game to buffer in memory
-            self.buffer.push_game(samples)
+            if self.val_buffer is not None:
+                completed_games.append(samples)
+            else:
+                self.buffer.push_game(samples)
 
         new_samples = generate_selfplay_games(
             model=self.best_model,
@@ -430,14 +489,40 @@ class AlphaZeroPipeline:
             train_only_full_search=self.config.train_only_full_search,
         )
 
+        if self.val_buffer is not None and len(completed_games) > 0:
+            train_games, val_games = split_games_train_val(completed_games, val_ratio=self.config.val_ratio)
+            for g in train_games:
+                self.buffer.push_game(g)
+            for g in val_games:
+                self.val_buffer.push_game(g)
+
         # Save buffer once per iteration to avoid excessive I/O bottleneck
+        buffer_path = os.path.join(self.config.checkpoint_dir, "buffer.pkl")
         self.buffer.save(buffer_path)
         print(f"    [+] Added {len(new_samples)} samples. Total Replay Buffer: {len(self.buffer)} samples (Saved to disk).")
 
-        # 2. Dynamic Training: prevent early overfitting when buffer is small
-        max_allowed_steps = max(20, (len(self.buffer) * 2) // self.config.batch_size)
-        effective_steps = min(self.config.train_steps, max_allowed_steps)
-        print(f"[*] Step 2/3: Dynamic Training ({effective_steps} steps [cap: {self.config.train_steps}], batch size {self.config.batch_size})...")
+        # Accumulate metrics for cost report & audit
+        self.total_completed_games += self.config.games_per_iter
+        self.total_valid_positions += len(new_samples)
+        self.total_nn_evals += self.config.num_sims * len(new_samples)
+        if self.config.playout_cap_randomization:
+            self.total_full_search_positions += int(len(new_samples) * self.config.full_search_prob)
+        else:
+            self.total_full_search_positions += len(new_samples)
+
+        # 2. Dynamic Training / Compute-Aware Adaptive Training
+        if self.config.adaptive_train_steps:
+            effective_steps = compute_adaptive_train_steps(
+                new_samples=len(new_samples),
+                steps_per_sample=self.config.steps_per_sample,
+                min_steps=self.config.min_train_steps,
+                max_steps=self.config.max_train_steps,
+            )
+            print(f"[*] Step 2/3: Compute-Aware Adaptive Training ({effective_steps} steps scaled from {len(new_samples)} new samples [range: {self.config.min_train_steps}-{self.config.max_train_steps}], batch size {self.config.batch_size})...")
+        else:
+            max_allowed_steps = max(20, (len(self.buffer) * 2) // self.config.batch_size)
+            effective_steps = min(self.config.train_steps, max_allowed_steps)
+            print(f"[*] Step 2/3: Dynamic Training ({effective_steps} steps [cap: {self.config.train_steps}], batch size {self.config.batch_size})...")
 
         # Ensure candidate starts from current best model weights and deepcopied optimizer momentum
         self.candidate_model.load_state_dict(self.best_model.state_dict())
@@ -457,7 +542,13 @@ class AlphaZeroPipeline:
         avg_own_loss = train_metrics.get("ownership_loss", 0.0)
         avg_sc_loss = train_metrics.get("score_loss", 0.0)
         aux_str = f", Own: {avg_own_loss:.4f}, Score: {avg_sc_loss:.4f}" if self.config.aux_heads else ""
-        print(f"    [+] Train Loss: {avg_loss:.4f} (Policy: {avg_pi_loss:.4f}, Value: {avg_v_loss:.4f}{aux_str})")
+
+        val_str = ""
+        if self.val_buffer is not None and len(self.val_buffer) > 0:
+            val_metrics = self.trainer.evaluate(self.val_buffer, batch_size=self.config.batch_size)
+            val_str = f" | Val Loss: {val_metrics['val_loss']:.4f} (KL: {val_metrics['policy_kl']:.4f}, Calib: {val_metrics['value_calibration']:.4f})"
+
+        print(f"    [+] Train Loss: {avg_loss:.4f} (Policy: {avg_pi_loss:.4f}, Value: {avg_v_loss:.4f}{aux_str}){val_str}")
 
         # 3. Arena Evaluation
         cand_id = f"iter_{iteration}"
@@ -609,8 +700,20 @@ class AlphaZeroPipeline:
         if self.start_iteration > 1:
             print(f"Resuming at iteration {self.start_iteration} up to {self.config.num_iters}.")
 
+        stopped_early = False
         for it in range(self.start_iteration, self.config.num_iters + 1):
             self.run_iteration(it)
+            should_stop, reason = self.check_budget_limits()
+            if should_stop:
+                print(f"\n[!] Safe Stop triggered: {reason}.")
+                report_path = self.save_cost_report()
+                print(f"[+] Cost report generated at: {report_path}")
+                stopped_early = True
+                break
+
+        if not stopped_early:
+            report_path = self.save_cost_report()
+            print(f"[+] Final cost report generated at: {report_path}")
 
 
 def main() -> None:
@@ -647,6 +750,9 @@ def main() -> None:
     parser.add_argument("--steps-per-sample", type=float, default=default_cfg.STEPS_PER_SAMPLE, help="Scaling factor from new samples to training steps")
     parser.add_argument("--min-train-steps", type=int, default=default_cfg.MIN_TRAIN_STEPS, help="Minimum training steps per iteration under adaptive training")
     parser.add_argument("--max-train-steps", type=int, default=default_cfg.MAX_TRAIN_STEPS, help="Maximum training steps per iteration under adaptive training")
+    parser.add_argument("--max-budget-usd", type=float, default=default_cfg.MAX_BUDGET_USD, help="Maximum compute budget in USD before safe stop")
+    parser.add_argument("--max-wallclock-hours", type=float, default=default_cfg.MAX_WALLCLOCK_HOURS, help="Maximum training wallclock duration in hours before safe stop")
+    parser.add_argument("--gpu-price-per-hour", type=float, default=default_cfg.GPU_PRICE_PER_HOUR, help="Cost per GPU hour in USD for budget tracking")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
     parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
     parser.set_defaults(resume=True, progress_bar=True, gating=True)
@@ -688,6 +794,9 @@ def main() -> None:
         steps_per_sample=args.steps_per_sample,
         min_train_steps=args.min_train_steps,
         max_train_steps=args.max_train_steps,
+        max_budget_usd=args.max_budget_usd,
+        max_wallclock_hours=args.max_wallclock_hours,
+        gpu_price_per_hour=args.gpu_price_per_hour,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

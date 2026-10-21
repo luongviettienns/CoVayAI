@@ -531,4 +531,15 @@
 - [x] **Toàn Bộ 161/161 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 20 test modules trong 29.21 giây.
 
+### Phase 30: Tích Hợp Nhánh Chính (Merge `feat/train-19x19` vào `main`) & Gắn Tag Release `v1.0.0` [HOÀN THÀNH - 161/161 Tests Passed]
+- [x] **Hợp Nhất Toàn Bộ 11 PRs Vào Nhánh `main`**:
+  - Thực hiện merge commit nguyên tử (`--no-ff`) từ nhánh `feat/train-19x19` vào nhánh `main` tại commit `09526a1`.
+  - Hợp nhất thành công 56 tệp thay đổi (+9,671 dòng mã, -409 dòng mã), không có bất kỳ xung đột (zero conflicts).
+- [x] **Xác Nhận Toàn Diện Sau Khi Merge (Post-Merge Verification)**:
+  - Chạy lại bộ kiểm thử tự động toàn diện trên nhánh `main`: **161/161 tests PASS (100%)** trên 20 test modules trong 31.76 giây.
+- [x] **Gắn Tag Phiên Bản Phát Hành (`v1.0.0`)**:
+  - Gắn Annotated Tag `v1.0.0`: *"Release v1.0.0: Complete 19x19 Go Production Upgrade with Size-Independent Model, Fast Engine, Batched Inference, Compact Storage, Auxiliary Supervision, and Fault Recovery"*.
+  - Sẵn sàng phục vụ triển khai huấn luyện quy mô lớn hoặc tích hợp Web UI production.
+
+
 

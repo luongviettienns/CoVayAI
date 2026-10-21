@@ -115,6 +115,9 @@ class PipelineConfig:
     buffer_size: int = default_cfg.BUFFER_SIZE
     augment: bool = default_cfg.AUGMENT
     num_iters: int = default_cfg.NUM_ITERS
+    aux_heads: bool = default_cfg.AUX_HEADS
+    ownership_coef: float = default_cfg.OWNERSHIP_COEF
+    score_coef: float = default_cfg.SCORE_COEF
 
     # Arena & Gating
     arena_games: int = default_cfg.ARENA_GAMES
@@ -205,12 +208,14 @@ class AlphaZeroPipeline:
             board_size=cfg.board_size,
             num_res_blocks=cfg.num_res_blocks,
             num_filters=cfg.num_filters,
+            aux_heads=cfg.aux_heads,
         ).to(self.device)
 
         self.candidate_model = AlphaZeroNet(
             board_size=cfg.board_size,
             num_res_blocks=cfg.num_res_blocks,
             num_filters=cfg.num_filters,
+            aux_heads=cfg.aux_heads,
         ).to(self.device)
 
         # Replay Buffer
@@ -226,6 +231,8 @@ class AlphaZeroPipeline:
             lr_gamma=default_cfg.LR_GAMMA,
             device=self.device,
             use_amp=cfg.use_amp and self.device.type == "cuda",
+            ownership_coef=cfg.ownership_coef,
+            score_coef=cfg.score_coef,
         )
 
         # Elo Tracker
@@ -426,7 +433,10 @@ class AlphaZeroPipeline:
         avg_loss = train_metrics["total_loss"]
         avg_pi_loss = train_metrics["policy_loss"]
         avg_v_loss = train_metrics["value_loss"]
-        print(f"    [+] Train Loss: {avg_loss:.4f} (Policy: {avg_pi_loss:.4f}, Value: {avg_v_loss:.4f})")
+        avg_own_loss = train_metrics.get("ownership_loss", 0.0)
+        avg_sc_loss = train_metrics.get("score_loss", 0.0)
+        aux_str = f", Own: {avg_own_loss:.4f}, Score: {avg_sc_loss:.4f}" if self.config.aux_heads else ""
+        print(f"    [+] Train Loss: {avg_loss:.4f} (Policy: {avg_pi_loss:.4f}, Value: {avg_v_loss:.4f}{aux_str})")
 
         # 3. Arena Evaluation
         cand_id = f"iter_{iteration}"
@@ -608,6 +618,9 @@ def main() -> None:
     parser.add_argument("--playout-cap-randomization", action="store_true", default=default_cfg.PLAYOUT_CAP_RANDOMIZATION, help="Enable playout cap randomization (fast vs full MCTS searches)")
     parser.add_argument("--fast-sims", type=int, default=default_cfg.FAST_SIMS, help="Fast search simulation budget for playout cap randomization")
     parser.add_argument("--full-search-prob", type=float, default=default_cfg.FULL_SEARCH_PROB, help="Probability of full search under playout cap randomization")
+    parser.add_argument("--aux-heads", action="store_true", default=default_cfg.AUX_HEADS, help="Enable ownership and score auxiliary supervision heads")
+    parser.add_argument("--ownership-coef", type=float, default=default_cfg.OWNERSHIP_COEF, help="Loss coefficient for auxiliary ownership prediction")
+    parser.add_argument("--score-coef", type=float, default=default_cfg.SCORE_COEF, help="Loss coefficient for auxiliary score prediction")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
     parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
     parser.set_defaults(resume=True, progress_bar=True, gating=True)
@@ -641,6 +654,9 @@ def main() -> None:
         playout_cap_randomization=args.playout_cap_randomization,
         fast_sims=args.fast_sims,
         full_search_prob=args.full_search_prob,
+        aux_heads=args.aux_heads,
+        ownership_coef=args.ownership_coef,
+        score_coef=args.score_coef,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

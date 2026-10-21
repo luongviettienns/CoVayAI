@@ -43,6 +43,11 @@ BUFFER_SIZE: int = 200_000 # số mẫu (state, pi, z)
 AUGMENT: bool = True       # 8 phép đối xứng D4, áp dụng lúc lấy batch
 NUM_ITERS: int = 150
 
+# --- Giám sát bổ trợ (Auxiliary Supervision) ---
+AUX_HEADS: bool = False
+OWNERSHIP_COEF: float = 0.25
+SCORE_COEF: float = 0.02
+
 # --- Arena ---
 ARENA_GAMES: int = 50
 ARENA_SIMS: int = 200

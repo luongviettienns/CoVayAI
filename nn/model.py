@@ -53,6 +53,7 @@ class AlphaZeroNet(nn.Module):
         num_filters: int = 96,
         in_channels: int = 17,
         value_channels: int = 32,
+        aux_heads: bool = False,
     ):
         super().__init__()
         self.board_size = board_size
@@ -61,6 +62,7 @@ class AlphaZeroNet(nn.Module):
         self.num_filters = num_filters
         self.in_channels = in_channels
         self.value_channels = value_channels
+        self.aux_heads = aux_heads
         self.architecture_version = 2
 
         # Initial convolutional trunk
@@ -86,7 +88,22 @@ class AlphaZeroNet(nn.Module):
         self.value_fc1 = nn.Linear(value_channels, 128)
         self.value_fc2 = nn.Linear(128, 1)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Size-Independent Auxiliary Heads (Ownership & Score Lead)
+        if aux_heads:
+            # Auxiliary Ownership Head: maps trunk [B, num_filters, H, W] -> [B, 16, H, W] -> [B, 1, H, W] -> tanh
+            self.own_conv = nn.Conv2d(num_filters, 16, kernel_size=1, bias=False)
+            self.own_bn = nn.BatchNorm2d(16)
+            self.own_spatial = nn.Conv2d(16, 1, kernel_size=1, bias=True)
+
+            # Auxiliary Score Difference Head: Conv -> BN -> GAP -> MLP -> tanh
+            self.score_conv = nn.Conv2d(num_filters, 16, kernel_size=1, bias=False)
+            self.score_bn = nn.BatchNorm2d(16)
+            self.score_fc1 = nn.Linear(16, 32)
+            self.score_fc2 = nn.Linear(32, 1)
+
+    def forward(
+        self, x: torch.Tensor, return_aux: bool = False
+    ) -> Tuple[torch.Tensor, ...]:
         # Input trunk
         out = F.relu(self.bn_in(self.conv_in(x)))
 
@@ -111,7 +128,22 @@ class AlphaZeroNet(nn.Module):
         v = F.relu(self.value_fc1(v_pooled))
         value = torch.tanh(self.value_fc2(v))
 
-        return policy_logits, value
+        if not return_aux:
+            return policy_logits, value
+
+        if not self.aux_heads:
+            raise ValueError("Cannot return auxiliary predictions when aux_heads=False")
+
+        # Auxiliary Ownership prediction: [B, 1, H, W] -> squeeze channel -> [B, H, W]
+        o = F.relu(self.own_bn(self.own_conv(out)))
+        ownership = torch.tanh(self.own_spatial(o)).squeeze(1)
+
+        # Auxiliary Score Lead prediction: [B, 1]
+        s = F.relu(self.score_bn(self.score_conv(out)))
+        s_pooled = s.mean(dim=(-2, -1))
+        score = torch.tanh(self.score_fc2(F.relu(self.score_fc1(s_pooled))))
+
+        return policy_logits, value, ownership, score
 
     def load_compatible_weights(self, state_dict: dict) -> Tuple[bool, bool]:
         """

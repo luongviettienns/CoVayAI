@@ -60,6 +60,9 @@ class ReplayBuffer:
         self.states: Optional[np.ndarray] = None
         self.pis: Optional[np.ndarray] = None
         self.zs: Optional[np.ndarray] = None
+        self.ownerships: Optional[np.ndarray] = None
+        self.scores: Optional[np.ndarray] = None
+        self.aux_masks: Optional[np.ndarray] = None
         self.metadata: Optional[List[Optional[Dict[str, Any]]]] = None
 
         if board_size is not None:
@@ -72,6 +75,9 @@ class ReplayBuffer:
         self.states = np.zeros((self.capacity, 17, board_size, board_size), dtype=np.uint8)
         self.pis = np.zeros((self.capacity, action_size), dtype=np.float16)
         self.zs = np.zeros((self.capacity, 1), dtype=np.int8)
+        self.ownerships = np.zeros((self.capacity, board_size, board_size), dtype=np.int8)
+        self.scores = np.zeros((self.capacity, 1), dtype=np.float16)
+        self.aux_masks = np.zeros((self.capacity, 1), dtype=np.uint8)
         self.metadata = [None] * self.capacity
 
     def push(
@@ -80,14 +86,27 @@ class ReplayBuffer:
         pi: np.ndarray,
         z: float,
         metadata: Optional[Dict[str, Any]] = None,
+        ownership: Optional[np.ndarray] = None,
+        score: Optional[float] = None,
+        has_aux: bool = False,
     ) -> None:
-        """Store a single training sample with optional metadata."""
+        """Store a single training sample with optional metadata and auxiliary targets."""
         if self.states is None:
             self._allocate(board_size=state.shape[-1])
 
         self.states[self.write_index] = (state > 0.5).astype(np.uint8) if state.dtype != np.uint8 else state
         self.pis[self.write_index] = pi.astype(np.float16)
         self.zs[self.write_index, 0] = int(round(z)) if z != 0 else 0
+
+        if ownership is not None and has_aux:
+            self.ownerships[self.write_index] = np.round(ownership).astype(np.int8)
+            self.scores[self.write_index, 0] = np.float16(score if score is not None else 0.0)
+            self.aux_masks[self.write_index, 0] = 1
+        elif self.ownerships is not None:
+            self.ownerships[self.write_index].fill(0)
+            self.scores[self.write_index, 0] = 0.0
+            self.aux_masks[self.write_index, 0] = 0
+
         self.metadata[self.write_index] = metadata
 
         self.write_index = (self.write_index + 1) % self.capacity
@@ -95,7 +114,7 @@ class ReplayBuffer:
             self.size += 1
 
     def push_game(self, game_samples: Any) -> None:
-        """Store all samples from a completed game or GameResult with metadata."""
+        """Store all samples from a completed game or GameResult with metadata and auxiliary targets."""
         if hasattr(game_samples, "samples"):
             # GameResult instance
             meta = {
@@ -106,16 +125,34 @@ class ReplayBuffer:
                 "moves": getattr(game_samples, "moves", 0),
                 "winner": getattr(game_samples, "winner", 0),
             }
-            for state, pi, z in game_samples.samples:
-                self.push(state, pi, z, metadata=meta)
+            has_aux = getattr(game_samples, "has_aux", False)
+            term_own = getattr(game_samples, "ownership", None)
+            term_score = getattr(game_samples, "score_diff", None)
+
+            for item in game_samples.samples:
+                if len(item) >= 5:
+                    s, p, z, own, sc = item[:5]
+                    self.push(s, p, z, metadata=meta, ownership=own, score=sc, has_aux=True)
+                else:
+                    s, p, z = item[:3]
+                    if has_aux and term_own is not None and term_score is not None:
+                        is_black = (np.mean(s[16]) > 0.5) if s.shape[0] > 16 else True
+                        own_p = (term_own * (1.0 if is_black else -1.0)).astype(np.int8)
+                        sc_p = float(np.tanh((term_score if is_black else -term_score) / 20.0))
+                        self.push(s, p, z, metadata=meta, ownership=own_p, score=sc_p, has_aux=True)
+                    else:
+                        self.push(s, p, z, metadata=meta)
         else:
             for item in game_samples:
-                if len(item) == 4:
-                    state, pi, z, m = item
-                    self.push(state, pi, z, metadata=m)
+                if len(item) >= 5:
+                    s, p, z, own, sc = item[:5]
+                    self.push(s, p, z, ownership=own, score=sc, has_aux=True)
+                elif len(item) == 4:
+                    s, p, z, m = item
+                    self.push(s, p, z, metadata=m)
                 else:
-                    state, pi, z = item[:3]
-                    self.push(state, pi, z)
+                    s, p, z = item[:3]
+                    self.push(s, p, z)
 
     def get_metadata(self, idx: int) -> Optional[Dict[str, Any]]:
         """Retrieve metadata for sample at chronological index idx."""
@@ -133,11 +170,12 @@ class ReplayBuffer:
         return self.metadata[slot] if self.metadata is not None else None
 
     def sample_batch(
-        self, batch_size: int, augment: bool = True
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch_size: int, augment: bool = True, return_aux: bool = False
+    ) -> Tuple[torch.Tensor, ...]:
         """
         Sample a mini-batch of training data in O(1) time per item.
         Converts compact uint8, float16, int8 into float32 PyTorch tensors.
+        If return_aux=True, also returns augmented ownership maps, score targets, and aux_masks.
         """
         if self.size == 0 or self.states is None:
             raise ValueError("Cannot sample from an empty ReplayBuffer.")
@@ -148,6 +186,12 @@ class ReplayBuffer:
         if not augment:
             batch_states = self.states[indices].astype(np.float32)
             batch_pis = self.pis[indices].astype(np.float32)
+            if return_aux:
+                batch_owns = (
+                    self.ownerships[indices].astype(np.float32)
+                    if self.ownerships is not None
+                    else np.zeros((batch_size, self.board_size, self.board_size), dtype=np.float32)
+                )
         else:
             batch_states = np.empty(
                 (batch_size, 17, self.board_size, self.board_size), dtype=np.float32
@@ -155,12 +199,29 @@ class ReplayBuffer:
             batch_pis = np.empty(
                 (batch_size, self.board_size * self.board_size + 1), dtype=np.float32
             )
+            batch_owns = (
+                np.empty((batch_size, self.board_size, self.board_size), dtype=np.float32)
+                if return_aux
+                else None
+            )
+
             for i, idx in enumerate(indices):
                 s = self.states[idx].astype(np.float32)
                 pi = self.pis[idx].astype(np.float32)
-                s_aug, pi_aug = apply_random_symmetry(s, pi)
+                flip = bool(np.random.choice([False, True]))
+                rot = int(np.random.randint(4))
+                s_aug, pi_aug = apply_random_symmetry(s, pi, flip=flip, rot=rot)
                 batch_states[i] = s_aug
                 batch_pis[i] = pi_aug
+                if return_aux and batch_owns is not None:
+                    own = (
+                        self.ownerships[idx].astype(np.float32)
+                        if self.ownerships is not None
+                        else np.zeros((self.board_size, self.board_size), dtype=np.float32)
+                    )
+                    own_flip = np.fliplr(own) if flip else own
+                    own_rot = np.rot90(own_flip, k=rot)
+                    batch_owns[i] = np.ascontiguousarray(own_rot)
 
         batch_zs = self.zs[indices].astype(np.float32)
 
@@ -168,7 +229,25 @@ class ReplayBuffer:
         pis_tensor = torch.from_numpy(batch_pis)
         zs_tensor = torch.from_numpy(batch_zs)
 
-        return states_tensor, pis_tensor, zs_tensor
+        if not return_aux:
+            return states_tensor, pis_tensor, zs_tensor
+
+        batch_scores = (
+            self.scores[indices].astype(np.float32)
+            if self.scores is not None
+            else np.zeros((batch_size, 1), dtype=np.float32)
+        )
+        batch_masks = (
+            self.aux_masks[indices].astype(np.float32)
+            if self.aux_masks is not None
+            else np.zeros((batch_size, 1), dtype=np.float32)
+        )
+
+        owns_tensor = torch.from_numpy(batch_owns)
+        scores_tensor = torch.from_numpy(batch_scores)
+        masks_tensor = torch.from_numpy(batch_masks)
+
+        return states_tensor, pis_tensor, zs_tensor, owns_tensor, scores_tensor, masks_tensor
 
     @property
     def buffer(self) -> _BufferView:
@@ -189,6 +268,10 @@ class ReplayBuffer:
             self.states.fill(0)
             self.pis.fill(0)
             self.zs.fill(0)
+        if self.ownerships is not None:
+            self.ownerships.fill(0)
+            self.scores.fill(0)
+            self.aux_masks.fill(0)
         if self.metadata is not None:
             self.metadata = [None] * self.capacity
 
@@ -208,16 +291,25 @@ class ReplayBuffer:
                 payload["states"] = self.states[: self.size].copy()
                 payload["pis"] = self.pis[: self.size].copy()
                 payload["zs"] = self.zs[: self.size].copy()
+                payload["ownerships"] = self.ownerships[: self.size].copy() if self.ownerships is not None else None
+                payload["scores"] = self.scores[: self.size].copy() if self.scores is not None else None
+                payload["aux_masks"] = self.aux_masks[: self.size].copy() if self.aux_masks is not None else None
                 payload["metadata"] = self.metadata[: self.size] if self.metadata else None
             else:
                 payload["states"] = self.states.copy()
                 payload["pis"] = self.pis.copy()
                 payload["zs"] = self.zs.copy()
+                payload["ownerships"] = self.ownerships.copy() if self.ownerships is not None else None
+                payload["scores"] = self.scores.copy() if self.scores is not None else None
+                payload["aux_masks"] = self.aux_masks.copy() if self.aux_masks is not None else None
                 payload["metadata"] = self.metadata.copy() if self.metadata else None
         else:
             payload["states"] = None
             payload["pis"] = None
             payload["zs"] = None
+            payload["ownerships"] = None
+            payload["scores"] = None
+            payload["aux_masks"] = None
             payload["metadata"] = None
 
         with open(tmp_path, "wb") as f:
@@ -265,6 +357,9 @@ class ReplayBuffer:
                 pis = data.get("pis")
                 zs = data.get("zs")
                 meta = data.get("metadata")
+                owns = data.get("ownerships")
+                scores = data.get("scores")
+                masks = data.get("aux_masks")
 
                 if states is None or loaded_size == 0:
                     self.clear()
@@ -282,6 +377,12 @@ class ReplayBuffer:
                         self.states[:loaded_size] = states
                         self.pis[:loaded_size] = conv_pis
                         self.zs[:loaded_size] = conv_zs
+                        if owns is not None and self.ownerships is not None:
+                            self.ownerships[:loaded_size] = owns
+                        if scores is not None and self.scores is not None:
+                            self.scores[:loaded_size] = scores
+                        if masks is not None and self.aux_masks is not None:
+                            self.aux_masks[:loaded_size] = masks
                         if meta is not None:
                             self.metadata[:loaded_size] = meta
                         self.write_index = data.get("write_index", loaded_size)
@@ -290,6 +391,12 @@ class ReplayBuffer:
                         self.states[:] = states
                         self.pis[:] = conv_pis
                         self.zs[:] = conv_zs
+                        if owns is not None and self.ownerships is not None:
+                            self.ownerships[:] = owns
+                        if scores is not None and self.scores is not None:
+                            self.scores[:] = scores
+                        if masks is not None and self.aux_masks is not None:
+                            self.aux_masks[:] = masks
                         if meta is not None:
                             self.metadata[:] = meta
                         self.write_index = data.get("write_index", 0)

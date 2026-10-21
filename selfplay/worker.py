@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from go.board import Board
-from go.scoring import compute_area_score
+from go.scoring import compute_area_score, compute_ownership_grid
 from go.zobrist import opponent, BLACK, WHITE
 from nn.features import extract_features
 from mcts.search import MCTS, select_action
@@ -30,6 +30,9 @@ class GameResult:
     komi: float = 7.5
     full_search_count: int = 0
     fast_search_count: int = 0
+    has_aux: bool = False
+    ownership: Optional[np.ndarray] = None
+    score_diff: Optional[float] = None
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -189,6 +192,15 @@ def play_selfplay_game(
         is_adjudicated = effective_adjudicate
         winner = score_winner if effective_adjudicate else 0
 
+    # Determine auxiliary ground truth supervision availability
+    has_aux = (not is_truncated or effective_adjudicate) and (end_reason == "two_passes" or effective_adjudicate)
+    terminal_ownership: Optional[np.ndarray] = None
+    terminal_score_diff: Optional[float] = None
+
+    if has_aux:
+        terminal_ownership = compute_ownership_grid(board)
+        terminal_score_diff = float(b_score - w_score)
+
     # Format training samples: (s, pi, z_perspective)
     samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
     # If truncated and not explicitly adjudicated, do NOT create fake z outcomes from tentative score!
@@ -214,6 +226,9 @@ def play_selfplay_game(
         komi=komi,
         full_search_count=full_search_count,
         fast_search_count=fast_search_count,
+        has_aux=has_aux,
+        ownership=terminal_ownership,
+        score_diff=terminal_score_diff,
     )
 
 

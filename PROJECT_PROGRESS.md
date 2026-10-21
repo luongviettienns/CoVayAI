@@ -487,4 +487,29 @@
 - [x] **Toàn Bộ 147/147 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 18 test modules trong 33.84 giây.
 
+### Phase 28: Lộ Trình 19×19 — PR 10: Ownership & Score Auxiliary Supervision (Phase P6) [HOÀN THÀNH - 154/154 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_train/test_auxiliary_supervision.py`)**:
+  - Xây dựng 7 bài kiểm thử chuyên sâu về giám sát bổ trợ:
+    - `test_compute_ownership_grid_simple_board`: Kiểm chứng hàm sinh nhãn `compute_ownership_grid` gắn đúng +1.0 cho quân & lãnh thổ Đen, -1.0 cho quân & lãnh thổ Trắng, 0.0 cho dame trung lập theo chuẩn Tromp-Taylor.
+    - `test_alphazero_net_with_aux_heads_size_independent`: Kiểm chứng mô hình `AlphaZeroNet` với `aux_heads=True` tương thích kích thước độc lập (chạy được trên cả 9×9 và 19×19), trả về `(pi, v)` ở chế độ mặc định và `(pi, v, own, score)` khi bật `return_aux=True`.
+    - `test_replay_buffer_stores_and_augments_auxiliary_targets`: Bộ đệm `ReplayBuffer` lưu trữ ownership dạng compact `int8`, score dạng `float16` và tự động áp dụng biến đổi đối xứng không gian D4 (xoay/lật) đồng bộ tuyệt đối giữa input board và 2D ownership grid.
+    - `test_selfplay_generates_auxiliary_labels_only_for_terminal_games`: Tự chơi chỉ gắn nhãn bổ trợ hợp lệ khi ván kết thúc tự nhiên qua 2 nước pass (`end_reason == "two_passes"`) hoặc được phân xử rõ ràng; tuyệt đối không tạo nhãn giả cho ván cờ bị cắt cụt (`truncated`).
+    - `test_trainer_auxiliary_loss_optimization`: `Trainer` tối ưu hóa đa nhiệm (multi-task loss) kết hợp Value Loss, Policy Loss, Ownership Loss và Score Lead Loss với gradient descent chuẩn xác.
+    - `test_checkpoint_compatibility_with_and_without_aux_heads`: Kiểm chứng khả năng nạp chéo trọng số giữa mô hình có và không có aux heads thông qua `load_compatible_weights` mà không gây lỗi phân rã cấu trúc.
+    - `test_replay_buffer_roundtrip_save_load_with_aux_targets`: Kiểm chứng tính toàn vẹn của dữ liệu bổ trợ sau chu trình tuần tự hóa và giải nạp từ đĩa cứng.
+- [x] **Sinh Nhãn Lãnh Thổ Tromp-Taylor Chuẩn Xác (`go/scoring.py`)**:
+  - Cung cấp hàm `compute_ownership_grid(board: Board) -> np.ndarray` tính toán phân bố lãnh thổ chính xác từng giao điểm trên bàn cờ.
+  - Tái cấu trúc `compute_area_score` đồng bộ trên cơ sở phân tích vùng lãnh thổ của `compute_ownership_grid`.
+- [x] **Kiến Trúc Đầu Bổ Trợ Độc Lập Kích Thước Bàn Cờ (`nn/model.py`)**:
+  - Bổ sung `aux_heads: bool = False` vào `AlphaZeroNet`:
+    - Ownership Head: Conv2D(num_filters, 16) $\to$ BN $\to$ Conv2D(16, 1) $\to$ `tanh` cho ra bản đồ dự đoán ownership $[B, H, W] \in [-1, 1]$.
+    - Score Difference Head: Conv2D(num_filters, 16) $\to$ BN $\to$ GAP $\to$ Linear(16, 32) $\to$ ReLU $\to$ Linear(32, 1) $\to$ `tanh` cho ra dự đoán độ chênh lệch điểm số $[B, 1] \in [-1, 1]$.
+  - Bảo toàn 100% tương thích ngược: mặc định `forward(x)` trả về `(policy_logits, value)` không làm ảnh hưởng bất kỳ luồng suy luận nào khác.
+- [x] **Huấn Luyện Đa Nhiệm Cân Bằng Hệ Số Tổn Thất (`train/trainer.py`, `config.py`, `main.py`)**:
+  - Cân bằng hệ số tổn thất: $L = L_v + L_p + c_{own} \cdot L_{own} + c_{score} \cdot L_{score}$ với `ownership_coef = 0.25` và `score_coef = 0.02`.
+  - Hỗ trợ mặt nạ `aux_masks` giúp chỉ tính tổn thất bổ trợ trên các mẫu có nhãn terminal hợp lệ.
+  - Tích hợp cờ cấu hình `--aux-heads`, `--ownership-coef`, `--score-coef` vào `config.py` và `main.py`.
+- [x] **Toàn Bộ 154/154 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 19 test modules trong 31.97 giây.
+
 

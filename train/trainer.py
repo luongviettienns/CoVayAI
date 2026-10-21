@@ -22,11 +22,15 @@ class Trainer:
         milestones: Optional[List[int]] = None,
         lr_gamma: float = 0.1,
         use_amp: bool = True,
+        ownership_coef: float = 0.25,
+        score_coef: float = 0.02,
         device: Optional[torch.device] = None,
     ):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.use_amp = use_amp and (self.device.type == "cuda")
+        self.ownership_coef = ownership_coef
+        self.score_coef = score_coef
         self.global_step: int = 0
 
         # Separate parameters into 2D/4D (weights: Conv, Linear) and 1D (biases, BatchNorm)
@@ -71,21 +75,35 @@ class Trainer:
         return self.optimizer.param_groups[0]["lr"]
 
     def train_step(
-        self, states: torch.Tensor, target_pis: torch.Tensor, target_zs: torch.Tensor
+        self,
+        states: torch.Tensor,
+        target_pis: torch.Tensor,
+        target_zs: torch.Tensor,
+        target_ownerships: Optional[torch.Tensor] = None,
+        target_scores: Optional[torch.Tensor] = None,
+        aux_masks: Optional[torch.Tensor] = None,
     ) -> Dict[str, float]:
         """
-        Execute one optimization step on a mini-batch.
+        Execute one optimization step on a mini-batch with primary and optional auxiliary losses.
         
         Loss:
-            L = MSE(v, z) - pi^T log(p) + c ||theta||^2
+            L = MSE(v, z) - pi^T log(p) + c_own * MSE(own, own_target) + c_score * MSE(score, score_target)
         """
         self.model.train()
         states = states.to(self.device)
         target_pis = target_pis.to(self.device)
         target_zs = target_zs.to(self.device)
 
+        has_aux = (
+            target_ownerships is not None
+            and getattr(self.model, "aux_heads", False)
+        )
+
         with torch.amp.autocast(device_type=self.device.type, enabled=self.use_amp):
-            policy_logits, value = self.model(states)
+            if has_aux:
+                policy_logits, value, pred_own, pred_score = self.model(states, return_aux=True)
+            else:
+                policy_logits, value = self.model(states)
 
             # Value Loss: MSE between predicted value and actual game outcome z
             loss_v = F.mse_loss(value, target_zs)
@@ -95,6 +113,29 @@ class Trainer:
             loss_p = -(target_pis * log_probs).sum(dim=-1).mean()
 
             total_loss = loss_v + loss_p
+            loss_own_val = 0.0
+            loss_score_val = 0.0
+
+            if has_aux:
+                target_ownerships = target_ownerships.to(self.device)
+                target_scores = target_scores.to(self.device)
+                if aux_masks is not None:
+                    aux_masks = aux_masks.to(self.device)
+                    valid_count = aux_masks.sum()
+                else:
+                    valid_count = torch.tensor(states.shape[0], device=self.device)
+
+                if valid_count > 0:
+                    h, w = states.shape[-2], states.shape[-1]
+                    mask_own = aux_masks.unsqueeze(-1) if aux_masks is not None else 1.0
+                    loss_own = (((pred_own - target_ownerships) ** 2) * mask_own).sum() / (valid_count * h * w + 1e-8)
+
+                    mask_score = aux_masks if aux_masks is not None else 1.0
+                    loss_score = (((pred_score - target_scores) ** 2) * mask_score).sum() / (valid_count + 1e-8)
+
+                    total_loss = total_loss + self.ownership_coef * loss_own + self.score_coef * loss_score
+                    loss_own_val = float(loss_own.item())
+                    loss_score_val = float(loss_score.item())
 
         self.optimizer.zero_grad()
         self.scaler.scale(total_loss).backward()
@@ -108,6 +149,8 @@ class Trainer:
             "total_loss": float(total_loss.item()),
             "policy_loss": float(loss_p.item()),
             "value_loss": float(loss_v.item()),
+            "ownership_loss": loss_own_val,
+            "score_loss": loss_score_val,
         }
 
     def train_iteration(
@@ -117,10 +160,20 @@ class Trainer:
         batch_size: int = 256,
         augment: bool = True,
         progress_bar: bool = False,
+        use_aux: Optional[bool] = None,
     ) -> Dict[str, float]:
         """Train over K steps sampled from the replay buffer and return average metrics."""
         if len(replay_buffer) == 0:
-            return {"total_loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
+            return {
+                "total_loss": 0.0,
+                "policy_loss": 0.0,
+                "value_loss": 0.0,
+                "ownership_loss": 0.0,
+                "score_loss": 0.0,
+            }
+
+        if use_aux is None:
+            use_aux = getattr(self.model, "aux_heads", False)
 
         try:
             from tqdm import tqdm
@@ -130,6 +183,8 @@ class Trainer:
         total_loss_accum = 0.0
         policy_loss_accum = 0.0
         value_loss_accum = 0.0
+        own_loss_accum = 0.0
+        score_loss_accum = 0.0
 
         iterator = range(steps)
         pbar = None
@@ -138,14 +193,29 @@ class Trainer:
             iterator = pbar
 
         for step_idx in iterator:
-            states, target_pis, target_zs = replay_buffer.sample_batch(
-                batch_size=batch_size, augment=augment
-            )
-            metrics = self.train_step(states, target_pis, target_zs)
+            if use_aux:
+                states, target_pis, target_zs, target_owns, target_scores, aux_masks = (
+                    replay_buffer.sample_batch(batch_size=batch_size, augment=augment, return_aux=True)
+                )
+                metrics = self.train_step(
+                    states,
+                    target_pis,
+                    target_zs,
+                    target_ownerships=target_owns,
+                    target_scores=target_scores,
+                    aux_masks=aux_masks,
+                )
+            else:
+                states, target_pis, target_zs = replay_buffer.sample_batch(
+                    batch_size=batch_size, augment=augment
+                )
+                metrics = self.train_step(states, target_pis, target_zs)
 
             total_loss_accum += metrics["total_loss"]
             policy_loss_accum += metrics["policy_loss"]
             value_loss_accum += metrics["value_loss"]
+            own_loss_accum += metrics.get("ownership_loss", 0.0)
+            score_loss_accum += metrics.get("score_loss", 0.0)
 
             if pbar is not None:
                 pbar.set_postfix({
@@ -158,6 +228,8 @@ class Trainer:
             "total_loss": total_loss_accum / steps,
             "policy_loss": policy_loss_accum / steps,
             "value_loss": value_loss_accum / steps,
+            "ownership_loss": own_loss_accum / steps,
+            "score_loss": score_loss_accum / steps,
         }
 
     def save_checkpoint(

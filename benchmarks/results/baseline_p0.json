@@ -1,0 +1,527 @@
+{
+  "environment": {
+    "git_commit": "4a29faed226e315874866dcb75daba95d9b0baac",
+    "timestamp": "2026-10-21T02:01:17Z",
+    "python_version": "3.13.15",
+    "pytorch_version": "2.6.0+cu124",
+    "cuda_version": "12.4",
+    "cuda_available": true,
+    "gpu_name": "NVIDIA GeForce RTX 3050 Laptop GPU",
+    "vram_total_gb": 4.0,
+    "cpu_processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "ram_total_gb": 15.63,
+    "os": "Windows 11 (10.0.22621)"
+  },
+  "benchmarks": {
+    "board": [
+      {
+        "benchmark": "board",
+        "size": 9,
+        "phase": "opening",
+        "move_count": 6,
+        "copy_ops_per_sec": 354101.3797290195,
+        "copy_mean_us": 2.824049995979294,
+        "legal_ops_per_sec": 7583.41567901802,
+        "legal_mean_us": 131.86669995775446,
+        "play_ops_per_sec": 128129.56464770102,
+        "play_mean_us": 7.804599998053164
+      },
+      {
+        "benchmark": "board",
+        "size": 9,
+        "phase": "middle_game",
+        "move_count": 30,
+        "copy_ops_per_sec": 257396.94498094064,
+        "copy_mean_us": 3.885049995733425,
+        "legal_ops_per_sec": 4765.76730270731,
+        "legal_mean_us": 209.82980000553653,
+        "play_ops_per_sec": 107665.80532739851,
+        "play_mean_us": 9.288000001106411
+      },
+      {
+        "benchmark": "board",
+        "size": 9,
+        "phase": "late_game",
+        "move_count": 60,
+        "copy_ops_per_sec": 286114.8464279026,
+        "copy_mean_us": 3.495100000873208,
+        "legal_ops_per_sec": 4297.243789904097,
+        "legal_mean_us": 232.70730004878715,
+        "play_ops_per_sec": 105970.37038480873,
+        "play_mean_us": 9.436600026674569
+      },
+      {
+        "benchmark": "board",
+        "size": 13,
+        "phase": "opening",
+        "move_count": 12,
+        "copy_ops_per_sec": 311948.24182180874,
+        "copy_mean_us": 3.2056599971838295,
+        "legal_ops_per_sec": 4169.6618724765585,
+        "legal_mean_us": 239.82760007493198,
+        "play_ops_per_sec": 138946.7839632321,
+        "play_mean_us": 7.196999969892204
+      },
+      {
+        "benchmark": "board",
+        "size": 13,
+        "phase": "middle_game",
+        "move_count": 60,
+        "copy_ops_per_sec": 281928.39016875724,
+        "copy_mean_us": 3.5470000002533197,
+        "legal_ops_per_sec": 2144.8448014714313,
+        "legal_mean_us": 466.23419993557036,
+        "play_ops_per_sec": 104777.8705890986,
+        "play_mean_us": 9.544000029563904
+      },
+      {
+        "benchmark": "board",
+        "size": 13,
+        "phase": "late_game",
+        "move_count": 120,
+        "copy_ops_per_sec": 258408.61623313327,
+        "copy_mean_us": 3.869840002153069,
+        "legal_ops_per_sec": 1131.148271679566,
+        "legal_mean_us": 884.0573999332264,
+        "play_ops_per_sec": 94025.61294712995,
+        "play_mean_us": 10.635399958118796
+      },
+      {
+        "benchmark": "board",
+        "size": 19,
+        "phase": "opening",
+        "move_count": 20,
+        "copy_ops_per_sec": 266510.31457841914,
+        "copy_mean_us": 3.7521999911405146,
+        "legal_ops_per_sec": 1686.6037279415648,
+        "legal_mean_us": 592.9075001040474,
+        "play_ops_per_sec": 150466.44676911132,
+        "play_mean_us": 6.645999965257943
+      },
+      {
+        "benchmark": "board",
+        "size": 19,
+        "phase": "middle_game",
+        "move_count": 90,
+        "copy_ops_per_sec": 248592.34502518724,
+        "copy_mean_us": 4.022650013212115,
+        "legal_ops_per_sec": 1146.8330494221252,
+        "legal_mean_us": 871.9664998352528,
+        "play_ops_per_sec": 76306.7533700981,
+        "play_mean_us": 13.104999961797148
+      },
+      {
+        "benchmark": "board",
+        "size": 19,
+        "phase": "late_game",
+        "move_count": 180,
+        "copy_ops_per_sec": 202841.8128143906,
+        "copy_mean_us": 4.929950024234131,
+        "legal_ops_per_sec": 830.5233958314956,
+        "legal_mean_us": 1204.0600000182167,
+        "play_ops_per_sec": 104558.76130884951,
+        "play_mean_us": 9.56400006543845
+      }
+    ],
+    "inference": [
+      {
+        "batch_size": 1,
+        "board_size": 9,
+        "use_fp16": false,
+        "evals_per_sec": 555.8557176134647,
+        "latency_per_batch_ms": 1.7990280000958592,
+        "latency_per_item_ms": 1.7990280000958592,
+        "peak_vram_mb": 13.14599609375,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 8,
+        "board_size": 9,
+        "use_fp16": false,
+        "evals_per_sec": 4666.339243337049,
+        "latency_per_batch_ms": 1.7144060006830841,
+        "latency_per_item_ms": 0.21430075008538552,
+        "peak_vram_mb": 13.4169921875,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 16,
+        "board_size": 9,
+        "use_fp16": false,
+        "evals_per_sec": 10697.160704191823,
+        "latency_per_batch_ms": 1.495724000269547,
+        "latency_per_item_ms": 0.0934827500168467,
+        "peak_vram_mb": 14.8828125,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 32,
+        "board_size": 9,
+        "use_fp16": false,
+        "evals_per_sec": 15542.808290557263,
+        "latency_per_batch_ms": 2.058830000460148,
+        "latency_per_item_ms": 0.06433843751437962,
+        "peak_vram_mb": 16.390625,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 64,
+        "board_size": 9,
+        "use_fp16": false,
+        "evals_per_sec": 17837.274997541743,
+        "latency_per_batch_ms": 3.5879920003935695,
+        "latency_per_item_ms": 0.05606237500614952,
+        "peak_vram_mb": 20.35546875,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 128,
+        "board_size": 9,
+        "use_fp16": false,
+        "evals_per_sec": 19114.8509862066,
+        "latency_per_batch_ms": 6.696363999508321,
+        "latency_per_item_ms": 0.05231534374615876,
+        "peak_vram_mb": 28.76953125,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 1,
+        "board_size": 13,
+        "use_fp16": false,
+        "evals_per_sec": 534.2091514654865,
+        "latency_per_batch_ms": 1.8719259998761117,
+        "latency_per_item_ms": 1.8719259998761117,
+        "peak_vram_mb": 13.3974609375,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 8,
+        "board_size": 13,
+        "use_fp16": false,
+        "evals_per_sec": 4828.2296947436735,
+        "latency_per_batch_ms": 1.656921999529004,
+        "latency_per_item_ms": 0.2071152499411255,
+        "peak_vram_mb": 15.888671875,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 16,
+        "board_size": 13,
+        "use_fp16": false,
+        "evals_per_sec": 7248.477820039053,
+        "latency_per_batch_ms": 2.20735999988392,
+        "latency_per_item_ms": 0.137959999992745,
+        "peak_vram_mb": 17.76416015625,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 32,
+        "board_size": 13,
+        "use_fp16": false,
+        "evals_per_sec": 8828.545778994998,
+        "latency_per_batch_ms": 3.6246059997938573,
+        "latency_per_item_ms": 0.11326893749355804,
+        "peak_vram_mb": 20.91015625,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 64,
+        "board_size": 13,
+        "use_fp16": false,
+        "evals_per_sec": 9686.437896849648,
+        "latency_per_batch_ms": 6.607176000252366,
+        "latency_per_item_ms": 0.10323712500394322,
+        "peak_vram_mb": 29.1826171875,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 128,
+        "board_size": 13,
+        "use_fp16": false,
+        "evals_per_sec": 9636.954830486591,
+        "latency_per_batch_ms": 13.282204000279307,
+        "latency_per_item_ms": 0.10376721875218209,
+        "peak_vram_mb": 45.7275390625,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 1,
+        "board_size": 19,
+        "use_fp16": false,
+        "evals_per_sec": 249.69936198992994,
+        "latency_per_batch_ms": 4.004815999651328,
+        "latency_per_item_ms": 4.004815999651328,
+        "peak_vram_mb": 14.3544921875,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 8,
+        "board_size": 19,
+        "use_fp16": false,
+        "evals_per_sec": 2474.8355623018433,
+        "latency_per_batch_ms": 3.2325380004476756,
+        "latency_per_item_ms": 0.40406725005595945,
+        "peak_vram_mb": 18.98486328125,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 16,
+        "board_size": 19,
+        "use_fp16": false,
+        "evals_per_sec": 4351.560387290798,
+        "latency_per_batch_ms": 3.6768420005682856,
+        "latency_per_item_ms": 0.22980262503551785,
+        "peak_vram_mb": 22.34521484375,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 32,
+        "board_size": 19,
+        "use_fp16": false,
+        "evals_per_sec": 4676.677874954631,
+        "latency_per_batch_ms": 6.842464000219479,
+        "latency_per_item_ms": 0.21382700000685873,
+        "peak_vram_mb": 31.1806640625,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 64,
+        "board_size": 19,
+        "use_fp16": false,
+        "evals_per_sec": 4844.3209345426485,
+        "latency_per_batch_ms": 13.211345999734476,
+        "latency_per_item_ms": 0.2064272812458512,
+        "peak_vram_mb": 48.8515625,
+        "precision": "fp32",
+        "benchmark": "inference"
+      },
+      {
+        "batch_size": 128,
+        "board_size": 19,
+        "use_fp16": false,
+        "evals_per_sec": 5057.359544596153,
+        "latency_per_batch_ms": 25.309650000417605,
+        "latency_per_item_ms": 0.19773164062826254,
+        "peak_vram_mb": 84.95458984375,
+        "precision": "fp32",
+        "benchmark": "inference"
+      }
+    ],
+    "mcts": [
+      {
+        "benchmark": "mcts",
+        "size": 9,
+        "phase": "opening",
+        "simulations": 32,
+        "latency_ms": 148.44170003198087,
+        "nodes_per_sec": 215.57284774497862
+      },
+      {
+        "benchmark": "mcts",
+        "size": 9,
+        "phase": "opening",
+        "simulations": 64,
+        "latency_ms": 299.532100034412,
+        "nodes_per_sec": 213.66658195447937
+      },
+      {
+        "benchmark": "mcts",
+        "size": 9,
+        "phase": "opening",
+        "simulations": 128,
+        "latency_ms": 628.9217000012286,
+        "nodes_per_sec": 203.52295047181542
+      },
+      {
+        "benchmark": "mcts",
+        "size": 9,
+        "phase": "middle_game",
+        "simulations": 32,
+        "latency_ms": 151.80420002434403,
+        "nodes_per_sec": 210.79785667898736
+      },
+      {
+        "benchmark": "mcts",
+        "size": 9,
+        "phase": "middle_game",
+        "simulations": 64,
+        "latency_ms": 304.2520000017248,
+        "nodes_per_sec": 210.35194509694983
+      },
+      {
+        "benchmark": "mcts",
+        "size": 9,
+        "phase": "middle_game",
+        "simulations": 128,
+        "latency_ms": 550.8030999917537,
+        "nodes_per_sec": 232.38794408004665
+      },
+      {
+        "benchmark": "mcts",
+        "size": 13,
+        "phase": "opening",
+        "simulations": 32,
+        "latency_ms": 153.879199991934,
+        "nodes_per_sec": 207.9553312057599
+      },
+      {
+        "benchmark": "mcts",
+        "size": 13,
+        "phase": "opening",
+        "simulations": 64,
+        "latency_ms": 319.6953000151552,
+        "nodes_per_sec": 200.1906189955438
+      },
+      {
+        "benchmark": "mcts",
+        "size": 13,
+        "phase": "opening",
+        "simulations": 128,
+        "latency_ms": 618.4382000355981,
+        "nodes_per_sec": 206.97298451588557
+      },
+      {
+        "benchmark": "mcts",
+        "size": 13,
+        "phase": "middle_game",
+        "simulations": 32,
+        "latency_ms": 171.70229996554554,
+        "nodes_per_sec": 186.3690818726438
+      },
+      {
+        "benchmark": "mcts",
+        "size": 13,
+        "phase": "middle_game",
+        "simulations": 64,
+        "latency_ms": 372.71460000192747,
+        "nodes_per_sec": 171.7131553195636
+      },
+      {
+        "benchmark": "mcts",
+        "size": 13,
+        "phase": "middle_game",
+        "simulations": 128,
+        "latency_ms": 743.3537000324577,
+        "nodes_per_sec": 172.19259148694763
+      },
+      {
+        "benchmark": "mcts",
+        "size": 19,
+        "phase": "opening",
+        "simulations": 32,
+        "latency_ms": 199.20670002466068,
+        "nodes_per_sec": 160.63716730430542
+      },
+      {
+        "benchmark": "mcts",
+        "size": 19,
+        "phase": "opening",
+        "simulations": 64,
+        "latency_ms": 401.7988000414334,
+        "nodes_per_sec": 159.28370117929754
+      },
+      {
+        "benchmark": "mcts",
+        "size": 19,
+        "phase": "opening",
+        "simulations": 128,
+        "latency_ms": 792.5576000125147,
+        "nodes_per_sec": 161.5024573582776
+      },
+      {
+        "benchmark": "mcts",
+        "size": 19,
+        "phase": "middle_game",
+        "simulations": 32,
+        "latency_ms": 226.83419997338206,
+        "nodes_per_sec": 141.07220165105196
+      },
+      {
+        "benchmark": "mcts",
+        "size": 19,
+        "phase": "middle_game",
+        "simulations": 64,
+        "latency_ms": 430.88510003872216,
+        "nodes_per_sec": 148.5314762433153
+      },
+      {
+        "benchmark": "mcts",
+        "size": 19,
+        "phase": "middle_game",
+        "simulations": 128,
+        "latency_ms": 947.2821999806911,
+        "nodes_per_sec": 135.1234088454413
+      }
+    ],
+    "pipeline": [
+      {
+        "board_size": 9,
+        "num_simulations": 32,
+        "num_moves": 60,
+        "winner": 2,
+        "termination_reason": "max_moves",
+        "elapsed_sec": 8.988754999998491,
+        "positions_per_sec": 6.675006716726629,
+        "games_per_hour": 400.50040300359774,
+        "peak_vram_mb": 13.14599609375,
+        "ram_used_mb": 14414.66015625,
+        "benchmark": "pipeline"
+      },
+      {
+        "board_size": 9,
+        "num_simulations": 64,
+        "num_moves": 46,
+        "winner": 2,
+        "termination_reason": "two_passes",
+        "elapsed_sec": 7.619946099992376,
+        "positions_per_sec": 6.036788107995413,
+        "games_per_hour": 472.4442867126845,
+        "peak_vram_mb": 13.14599609375,
+        "ram_used_mb": 14382.03515625,
+        "benchmark": "pipeline"
+      },
+      {
+        "board_size": 19,
+        "num_simulations": 16,
+        "num_moves": 30,
+        "winner": 2,
+        "termination_reason": "max_moves",
+        "elapsed_sec": 1.5447799999965355,
+        "positions_per_sec": 19.420241069969368,
+        "games_per_hour": 2330.4289283963244,
+        "peak_vram_mb": 14.3544921875,
+        "ram_used_mb": 14390.03515625,
+        "benchmark": "pipeline"
+      },
+      {
+        "board_size": 19,
+        "num_simulations": 32,
+        "num_moves": 30,
+        "winner": 2,
+        "termination_reason": "max_moves",
+        "elapsed_sec": 3.021073800045997,
+        "positions_per_sec": 9.93024400779062,
+        "games_per_hour": 1191.6292809348745,
+        "peak_vram_mb": 14.3544921875,
+        "ram_used_mb": 14452.3203125,
+        "benchmark": "pipeline"
+      }
+    ]
+  }
+}

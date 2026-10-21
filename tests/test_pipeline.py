@@ -47,6 +47,7 @@ def test_pipeline_single_iteration_and_resume():
         assert os.path.exists(os.path.join(tmpdir, "checkpoint_iter_1.pt"))
         assert os.path.exists(os.path.join(tmpdir, "best_model.pt"))
         assert os.path.exists(os.path.join(tmpdir, "buffer.pkl"))
+        assert os.path.exists(os.path.join(tmpdir, "latest_manifest.json"))
 
         # Test resume functionality: create second pipeline instance pointing to same tmpdir
         resumed_pipeline = AlphaZeroPipeline(config)
@@ -54,3 +55,35 @@ def test_pipeline_single_iteration_and_resume():
         assert len(resumed_pipeline.buffer) == metrics["selfplay_samples"]
         expected_best_id = "iter_1" if metrics["accepted"] else "iter_0"
         assert resumed_pipeline.current_best_id == expected_best_id
+
+
+def test_pipeline_parallel_workers():
+    """Verify end-to-end pipeline iteration executes cleanly with multi-worker actor pool."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = PipelineConfig(
+            board_size=5,
+            num_res_blocks=1,
+            num_filters=16,
+            num_sims=3,
+            games_per_iter=2,
+            train_steps=2,
+            batch_size=8,
+            arena_games=2,
+            win_threshold=0.55,
+            checkpoint_dir=tmpdir,
+            device="cpu",
+            progress_bar=False,
+            resume=False,
+            max_moves=4,
+            num_workers=2,
+            infer_batch_size=4,
+        )
+
+        pipeline = AlphaZeroPipeline(config)
+        metrics = pipeline.run_iteration(iteration=1)
+
+        assert metrics["iteration"] == 1
+        assert metrics["selfplay_samples"] > 0
+        assert os.path.exists(os.path.join(tmpdir, "buffer.pkl"))
+        assert os.path.exists(os.path.join(tmpdir, "checkpoint_iter_1.pt"))
+

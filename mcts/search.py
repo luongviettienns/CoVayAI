@@ -41,6 +41,42 @@ def select_action(pi: np.ndarray, temperature: float = 1.0) -> int:
         return int(np.random.choice(candidates))
 
 
+def get_default_dirichlet_alpha(board_size: int) -> float:
+    """Calculate size-dependent Dirichlet noise concentration parameter.
+
+    In AlphaZero and KataGo, alpha scales inversely with average legal move count:
+      - 5x5: 0.60
+      - 7x7: 0.35
+      - 9x9: 0.25 (or 0.30)
+      - 13x13: 0.08
+      - 19x19: 0.03
+    """
+    if board_size <= 5:
+        return 0.60
+    elif board_size <= 7:
+        return 0.35
+    elif board_size <= 9:
+        return 0.25
+    elif board_size <= 13:
+        return 0.08
+    else:
+        return 0.03
+
+
+def get_default_temp_moves(board_size: int) -> int:
+    """Calculate temperature exploration opening length scaled by board size."""
+    if board_size <= 5:
+        return 6
+    elif board_size <= 7:
+        return 8
+    elif board_size <= 9:
+        return 12
+    elif board_size <= 13:
+        return 20
+    else:
+        return 30
+
+
 class MCTS:
     """
     Monte Carlo Tree Search algorithm guided by dual-head neural network.
@@ -52,7 +88,7 @@ class MCTS:
         model,
         num_simulations: int = 200,
         c_puct: float = 1.5,
-        dirichlet_alpha: float = 0.25,
+        dirichlet_alpha: Optional[float] = None,
         dirichlet_eps: float = 0.25,
         add_noise: bool = True,
         komi: float = 7.5,
@@ -129,7 +165,12 @@ class MCTS:
             curr_v = -curr_v
             curr = curr.parent
 
-    def search(self, board: Board, temperature: float = 1.0) -> np.ndarray:
+    def search(
+        self,
+        board: Board,
+        temperature: float = 1.0,
+        num_simulations: Optional[int] = None,
+    ) -> np.ndarray:
         """
         Run MCTS simulations from the current board state and return normalized visit distribution.
         
@@ -141,6 +182,7 @@ class MCTS:
             board: Current Board state
             temperature: Legacy exploration parameter. Note that search() returns soft
                          normalized visit count distribution pi regardless of temperature.
+            num_simulations: Optional simulation override per move (e.g. for playout cap randomization).
                          
         Returns:
             pi: Soft normalized visit count vector of shape (N*N + 1,) summing to 1.0.
@@ -158,8 +200,13 @@ class MCTS:
         # 2. Apply Dirichlet noise on root children whenever add_noise is True
         # Always compute noise relative to clean_prior to avoid cumulative distortion across searches
         if self.add_noise and len(self.root.children) > 0:
+            effective_alpha = (
+                self.dirichlet_alpha
+                if self.dirichlet_alpha is not None
+                else get_default_dirichlet_alpha(board.size)
+            )
             actions = list(self.root.children.keys())
-            noise = np.random.dirichlet([self.dirichlet_alpha] * len(actions))
+            noise = np.random.dirichlet([effective_alpha] * len(actions))
             for a, n in zip(actions, noise):
                 child = self.root.children[a]
                 child.prior = (
@@ -168,7 +215,8 @@ class MCTS:
                 )
 
         # 3. Run simulations from root
-        for _ in range(self.num_simulations):
+        sims_to_run = num_simulations if num_simulations is not None else self.num_simulations
+        for _ in range(sims_to_run):
             self._simulate_once(board)
 
         # 4. Compute soft visit count distribution (tau = 1.0)

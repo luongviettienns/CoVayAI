@@ -20,6 +20,12 @@ TEMP_MOVES: int = 12       # 12 nước đầu: tau = 1, sau đó tau -> 0
 RESIGN_THRESHOLD: float = -0.9
 RESIGN_DISABLE_FRAC: float = 0.10  # 10% ván không cho resign để kiểm tra false-positive
 
+# --- Playout Cap Randomization ---
+PLAYOUT_CAP_RANDOMIZATION: bool = False
+FAST_SIMS: int = 60
+FULL_SEARCH_PROB: float = 0.25
+TRAIN_ONLY_FULL_SEARCH: bool = True
+
 # --- Self-play song song ---
 NUM_WORKERS: int = 5       # số luồng/tiến trình sinh ván
 INFER_BATCH_SIZE: int = 64 # gom leaf thành batch cho GPU
@@ -36,6 +42,11 @@ TRAIN_STEPS: int = 400     # số batch mỗi iteration
 BUFFER_SIZE: int = 200_000 # số mẫu (state, pi, z)
 AUGMENT: bool = True       # 8 phép đối xứng D4, áp dụng lúc lấy batch
 NUM_ITERS: int = 150
+
+# --- Giám sát bổ trợ (Auxiliary Supervision) ---
+AUX_HEADS: bool = False
+OWNERSHIP_COEF: float = 0.25
+SCORE_COEF: float = 0.02
 
 # --- Arena ---
 ARENA_GAMES: int = 50

@@ -95,7 +95,7 @@ class GoWebArena {
 
         this.ctx.scale(dpr, dpr);
         this.displaySize = size;
-        this.margin = size * 0.08;
+        this.margin = Math.round(size * 0.115);
         this.cellSize = (size - 2 * this.margin) / (this.boardSize - 1);
         this.stoneRadius = (this.cellSize / 2) * 0.94;
 
@@ -158,25 +158,27 @@ class GoWebArena {
 
     drawCoordinates() {
         const ctx = this.ctx;
-        ctx.fillStyle = '#6d4218';
-        ctx.font = `600 ${Math.max(10, this.margin * 0.38)}px 'JetBrains Mono', monospace`;
+        ctx.fillStyle = '#4a250a';
+        ctx.font = `700 ${Math.max(11, Math.round(this.margin * 0.28))}px 'JetBrains Mono', monospace`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+
+        const textOffset = this.margin * 0.38;
 
         // Column letters (Top and Bottom)
         for (let col = 0; col < this.boardSize; col++) {
             const letter = COL_LETTERS[col];
             const x = this.margin + col * this.cellSize;
-            ctx.fillText(letter, x, this.margin * 0.42);
-            ctx.fillText(letter, x, this.displaySize - this.margin * 0.42);
+            ctx.fillText(letter, x, textOffset);
+            ctx.fillText(letter, x, this.displaySize - textOffset);
         }
 
         // Row numbers (Left and Right)
         for (let row = 0; row < this.boardSize; row++) {
             const num = (this.boardSize - row).toString();
             const y = this.margin + row * this.cellSize;
-            ctx.fillText(num, this.margin * 0.42, y);
-            ctx.fillText(num, this.displaySize - this.margin * 0.42, y);
+            ctx.fillText(num, textOffset, y);
+            ctx.fillText(num, this.displaySize - textOffset, y);
         }
     }
 

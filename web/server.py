@@ -30,7 +30,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 class GameSession:
     """Encapsulates active game state, AI model, and MCTS tree."""
 
-    def __init__(self, board_size: int = 9, komi: float = 7.5, sims: int = 64, device_str: Optional[str] = None):
+    def __init__(self, board_size: int = 9, komi: float = 7.5, sims: int = 128, device_str: Optional[str] = None):
         self.board_size = board_size
         self.komi = komi
         self.sims = sims
@@ -113,7 +113,21 @@ class GameSession:
         self.last_ai_policy = pi
         self.last_ai_value = float(self.mcts.root.value_score)
 
-        action = select_action(pi, temperature=0.0)
+        pass_action = self.board_size * self.board_size
+        # Early-pass avoidance heuristic:
+        # If opponent did not pass and board is still in active play, force AI to play on board
+        if self.board.consecutive_passes == 0 and len(self.move_history) < 2 * self.board_size:
+            pi_candidate = pi.copy()
+            pi_candidate[pass_action] = 0.0
+            sum_prob = np.sum(pi_candidate)
+            if sum_prob > 0:
+                pi_candidate /= sum_prob
+                action = int(select_action(pi_candidate, temperature=0.0))
+            else:
+                action = pass_action
+        else:
+            action = int(select_action(pi, temperature=0.0))
+
         if self.board.play(action):
             self.move_history.append(action)
             self.mcts.advance_root(action)
@@ -206,7 +220,7 @@ class GoRequestHandler(SimpleHTTPRequestHandler):
             color_str = data.get("user_color", "B")
             user_color = BLACK if color_str == "B" else WHITE
             komi = float(data.get("komi", 7.5 if size >= 9 else 0.5))
-            sims = int(data.get("sims", 64))
+            sims = int(data.get("sims", 128))
 
             SESSION.reset(board_size=size, user_color=user_color, komi=komi, sims=sims)
 

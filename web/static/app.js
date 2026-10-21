@@ -488,6 +488,12 @@ class GoWebArena {
             if (data.device_name) {
                 this.dom.deviceText.textContent = `${data.device_name} (${data.device})`;
             }
+            if (data.iteration) {
+                const badge = document.querySelector('.brand-text .badge');
+                if (badge) {
+                    badge.textContent = `AlphaZero 9x9 (Iter ${data.iteration})`;
+                }
+            }
         } catch (e) {
             this.dom.deviceText.textContent = "CoVayAI Local Server";
         }

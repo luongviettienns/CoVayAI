@@ -57,11 +57,14 @@ class GameSession:
         num_res_blocks = 6 if self.board_size == 9 else 2
         num_filters = 96 if self.board_size == 9 else 32
         loaded_state = None
+        self.loaded_iteration = None
 
         if os.path.exists(best_path):
             try:
                 ckpt = torch.load(best_path, map_location=self.device)
                 state = ckpt["model_state_dict"] if isinstance(ckpt, dict) and "model_state_dict" in ckpt else ckpt
+                if isinstance(ckpt, dict) and "iteration" in ckpt:
+                    self.loaded_iteration = str(ckpt["iteration"])
                 if "conv_in.weight" in state:
                     num_filters = state["conv_in.weight"].shape[0]
                     num_res_blocks = sum(1 for k in state.keys() if k.startswith("res_blocks.") and k.endswith(".conv1.weight"))
@@ -79,7 +82,8 @@ class GameSession:
         if loaded_state is not None:
             try:
                 self.model.load_state_dict(loaded_state)
-                print(f"[+] Web Server: Loaded model ({num_res_blocks}b x {num_filters}f) from {best_path}")
+                iter_info = f"iter {self.loaded_iteration}" if self.loaded_iteration is not None else "weights"
+                print(f"[+] Web Server: Loaded model ({num_res_blocks}b x {num_filters}f, {iter_info}) from {best_path}")
             except Exception as e:
                 print(f"[-] Web Server: Warning loading weights from {best_path}: {e}")
 
@@ -205,6 +209,7 @@ class GoRequestHandler(SimpleHTTPRequestHandler):
                 "device": str(SESSION.device),
                 "cuda_available": torch.cuda.is_available(),
                 "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
+                "iteration": SESSION.loaded_iteration,
             }
             self._send_json(info)
             return

@@ -49,6 +49,7 @@ def play_selfplay_game(
     max_moves: Optional[int] = None,
     komi: float = 7.5,
     device: Optional[torch.device] = None,
+    initial_moves: Optional[List[int]] = None,
 ) -> GameResult:
     """
     Play one full self-play game and collect training tuples of (state, pi, z).
@@ -65,6 +66,7 @@ def play_selfplay_game(
         max_moves: Maximum game length cap
         komi: Area scoring compensation for White (default 7.5)
         device: Torch device (CUDA or CPU)
+        initial_moves: Optional list of opening actions to apply before self-play begins
         
     Returns:
         GameResult containing samples and rich match metadata.
@@ -84,6 +86,13 @@ def play_selfplay_game(
     trajectory: List[Tuple[np.ndarray, np.ndarray, int]] = []
     resigned_player: Optional[int] = None
     step = 0
+
+    if initial_moves:
+        for m in initial_moves:
+            if not board.play(m):
+                break
+            mcts.advance_root(m)
+            step += 1
 
     while not board.is_game_over():
         features = extract_features(board)

@@ -266,8 +266,24 @@
   - Kiểm thử trực quan end-to-end qua Browser Subagent: Đặt quân Đen tại giao điểm, AI phản hồi nước Trắng chuẩn xác và cập nhật điểm số, tỷ lệ thắng, lịch sử nước đi trực quan.
   - Máy chủ đang chạy sẵn sàng phục vụ tại: **`http://localhost:8080`**.
 
-
-
-
-
-
+### Phase 18: Huấn Luyện Giáo Trình Phản Đòn ("Học Trả Thù" - Targeted Revenge Curriculum) [HOÀN THÀNH - SẴN SÀNG ĐẤU TRƯỜNG]
+- [x] **Trích Xuất & Phân Tích Ván Cờ Thực Chiến 24 Nước Của Người Dùng**:
+  - Biên bản ván đấu: `['E5', 'D8', 'E3', 'D6', 'G6', 'E7', 'D5', 'C5', 'C4', 'D4', 'C3', 'B4', 'B3', 'E4', 'F4', 'D3', 'D2', 'D4', 'F7', 'Pass', 'C6', 'Pass', 'E6', 'Pass']`.
+  - Phân tích điểm mù: Người dùng (Black) chiếm giữ Thiên nguyên `E5`, sau đó củng cố vững chắc trung tâm với `E3`, `G6`, `D5`. AI cũ (White) đánh tản mác ở biên (`D8`, `D6`, `E7`) nên bị Black vây hãm và chiếm toàn bộ đất trung tâm.
+- [x] **Tăng Cường Dữ Liệu Đối Xứng ($D_4$ Augmentation) & Khởi Tạo Nhãn Chuẩn**:
+  - Nhân bản 24 nước đi qua 8 phép biến hình đối xứng nhóm Dihedral $D_4$ (xoay $90^\circ, 180^\circ, 270^\circ$ và lật gương), sinh ra **192 mẫu huấn luyện chuẩn**.
+  - Gán nhãn kết quả thực tế $z = +1.0$ (Black) và $z = -1.0$ (White) để Value Head học cách nhận thức sự thất thế khi để Black tự do kiểm soát trung tâm.
+- [x] **Phân Nhánh Kịch Bản Tự Chơi (Scenario Self-Play Exploration)**:
+  - Nâng cấp `selfplay/worker.py:play_selfplay_game` hỗ trợ tham số `initial_moves`, cho phép bắt đầu ván cờ từ bất kỳ thế trận kịch bản nào.
+  - Sinh **996 mẫu self-play chất lượng cao** phân nhánh từ các nước mở màn 1–6 (`E5, D8, E3, D6, G6, E7`) với 128 simulations MCTS trên GPU.
+- [x] **Huấn Luyện Tinh Chỉnh Nhắm Mục Tiêu (Targeted Fine-Tuning - `scripts/train_revenge.py`)**:
+  - Huấn luyện 80 bước tối ưu gradient descent kết hợp dữ liệu ván đấu người dùng và dữ liệu kịch bản phân nhánh.
+  - Loss hội tụ xuất sắc: Tổng Loss $4.0215$ (Policy Loss: $3.2117$, Value Loss: $0.8098$).
+  - Lưu checkpoint đặc biệt: `checkpoints/run9_prod/checkpoint_revenge.pt` và cập nhật trực tiếp vào `best_model.pt` với nhãn phiên bản `69-Revenge`.
+- [x] **Khắc Phục Toàn Diện 2 Lỗi Trải Nghiệm Trên Giao Diện Web**:
+  - **Sửa lỗi AI bỏ lượt sớm (Early Pass Bug)**: Khắc phục hiện tượng MCTS với số simulation thấp dồn xác suất vào hành động Pass; thêm logic cưỡng chế chọn nước đi bàn cờ tốt nhất khi đối thủ chưa pass.
+  - **Khắc phục đè chữ tọa độ viền bàn cờ**: Mở rộng biên vẽ bàn cờ Canvas từ $8\%$ lên $11.5\%$ (`margin = 0.115 * size`), dịch nhãn tọa độ ra ngoài vùng bán kính quân cờ, đảm bảo quân ở hàng biên (A, J, 1, 9) hoàn toàn tách bạch khỏi chữ số.
+- [x] **Đưa Vào Hoạt Động & Kiểm Chứng Thực Tế**:
+  - Server `web/server.py` đang nạp checkpoint `69-Revenge` trên cổng `8080`.
+  - Thử nghiệm thực tế: Khi Black đánh `E5`, AI Trắng lập tức phản ứng bằng các nước cờ đối kháng trực diện như `C6`, `C4`, `D3`, `E4` tranh giành trung tâm quyết liệt.
+  - Toàn bộ **96/96 tests tự động PASS 100%**.

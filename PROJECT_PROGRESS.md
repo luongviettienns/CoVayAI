@@ -233,9 +233,37 @@
     - Đối đầu `CaptureHeuristicModel` (AI chiến thuật chuyên săn bắt quân atari): Thắng áp đảo **$4/4$ ván ($100.0\%$)** qua các ván đấu 91 – 152 nước cờ.
     - Mô hình đã hình thành trực giác bảo vệ quân, kiểm soát vùng biên và ăn quân đối phương.
   - Thăng cấp `checkpoint_iter_20.pt` thành `best_model.pt` làm hạt giống chuẩn mực cho Giai đoạn 2.
-- [ ] **Giai đoạn 2 (Iterations 21 $\rightarrow$ 70) [ĐANG CHẠY NỀN]**:
+- [ ] **Giai đoạn 2 (Iterations 21 $\rightarrow$ 70) [TIẾN ĐỘ ~94% - ĐANG CHẠY ITERATION 66/70]**:
   - Cấu hình: `--sims 64`, `--train-steps 100`, `--batch-size 64`, `--no-gating` (huấn luyện liên tục AlphaZero 2018).
-  - Mục tiêu: Rèn luyện khả năng tạo mắt sống độc lập, tính toán sâu các thế vây bắt và tối ưu hóa điểm số lãnh thổ cuối trận (yose).
+  - Trạng thái hiện tại: Đã hoàn tất 65/70 iterations, đang chạy iteration 66.
+  - Tỷ lệ ván đấu kết thúc bằng `reason=resign` gia tăng đáng kể, chứng minh mô hình đã học được cách định giá thế trận (Value Head) rất nhạy bén, nhận biết khi nào vị thế không thể cứu vãn để đầu hàng thay vì đánh bừa.
+  - Dự kiến hoàn tất toàn bộ 70 iterations vào khoảng 08:20 AM.
+
+### Phase 17: CoVayAI Web Arena — Đấu Trường Trực Quan Web Test Chơi Cờ Vây [HOÀN THÀNH - 96/96 Tests Passed]
+- [x] **Kiến Trúc Backend & API Suy Luận PyTorch (`web/server.py`)**:
+  - Sử dụng `ThreadedHTTPServer` đa luồng tích hợp sẵn trong Python standard library, tuyệt đối an toàn và không xung đột với tiến trình train đang chạy nền trên GPU.
+  - Tự động phát hiện kiến trúc siêu tham số từ checkpoint (`num_res_blocks`, `num_filters`), tự động nạp `best_model.pt` hoặc rơi về mô hình khởi tạo nếu chưa có checkpoint.
+  - Cung cấp đầy đủ REST API:
+    - `GET /api/info`: Thông tin thiết bị tăng tốc phần cứng (NVIDIA RTX 3050 CUDA).
+    - `GET /api/state`: Trạng thái bàn cờ, ma trận grid, danh sách nước hợp lệ, tỷ lệ thắng (Winrate), điểm lãnh thổ ước tính.
+    - `POST /api/new_game`: Khởi tạo ván mới tùy chỉnh kích thước ($9\times 9$ hoặc $5\times 5$), màu quân (Đen/Trắng), độ sâu MCTS (32, 64, 128 sims).
+    - `POST /api/play`: Đặt quân người chơi và kích hoạt AI phản hồi tức thì qua MCTS.
+    - `POST /api/pass`: Bỏ lượt và kích hoạt AI phản hồi.
+    - `POST /api/resign`: Xin thua ván cờ.
+- [x] **Giao Diện Frontend Sang Trọng Hiện Đại (`web/static/`)**:
+  - `index.html`: Cấu trúc ngữ nghĩa trực quan với bàn cờ trung tâm, thẻ trạng thái 2 bên đối kháng, thanh đo tỷ lệ thắng kép (Dual Winrate Gauge), danh sách chip các nước cờ AI cân nhắc (MCTS Prior), bộ điều khiển trận đấu và biên bản ván đấu.
+  - `style.css`: Thiết kế Dark-mode Glassmorphism cao cấp, bảng màu hiện đại (`Outfit` + `JetBrains Mono`), vân gỗ bàn cờ tự nhiên, quân cờ 3D bóng đổ obsidian/pearl.
+  - `app.js`:
+    - Vẽ bàn cờ Canvas sắc nét trên màn hình Retina (DPR 2x), vẽ sao (hoshi) chuẩn $9\times 9$ và $5\times 5$, nhãn tọa độ A-J (bỏ chữ I theo chuẩn quốc tế) và 1-9.
+    - Quân cờ mờ (ghost preview) khi di chuột qua các giao điểm hợp lệ.
+    - Vòng hào quang sáng chỉ định nước đi mới nhất (last move indicator).
+    - Tự tổng hợp âm thanh tiếng cạch gõ quân cờ qua Web Audio API (không cần tải tệp mp3 ngoài).
+- [x] **Kiểm Thử Tự Động & Thử Nghiệm Thực Tế Trình Duyệt**:
+  - Viết bộ kiểm thử tích hợp `tests/test_web_server.py`: Kiểm thử vòng đời ván đấu, phản hồi MCTS và toàn bộ REST API endpoints.
+  - **100% 96/96 bài kiểm thử toàn dự án đạt PASS**!
+  - Kiểm thử trực quan end-to-end qua Browser Subagent: Đặt quân Đen tại giao điểm, AI phản hồi nước Trắng chuẩn xác và cập nhật điểm số, tỷ lệ thắng, lịch sử nước đi trực quan.
+  - Máy chủ đang chạy sẵn sàng phục vụ tại: **`http://localhost:8080`**.
+
 
 
 

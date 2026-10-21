@@ -71,3 +71,8 @@ MAX_BUDGET_USD: Optional[float] = None
 MAX_WALLCLOCK_HOURS: Optional[float] = None
 GPU_PRICE_PER_HOUR: float = 0.0
 
+# --- Tối Ưu Hóa Hiệu Năng PyTorch (Memory Format & Compilation) ---
+CHANNELS_LAST: bool = False
+COMPILE_MODEL: bool = False
+CUDNN_BENCHMARK: bool = True
+

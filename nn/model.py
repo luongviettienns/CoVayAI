@@ -63,6 +63,7 @@ class AlphaZeroNet(nn.Module):
         self.in_channels = in_channels
         self.value_channels = value_channels
         self.aux_heads = aux_heads
+        self.channels_last: bool = False
         self.architecture_version = 2
 
         # Initial convolutional trunk
@@ -101,9 +102,18 @@ class AlphaZeroNet(nn.Module):
             self.score_fc1 = nn.Linear(16, 32)
             self.score_fc2 = nn.Linear(32, 1)
 
+    def to_channels_last(self) -> "AlphaZeroNet":
+        """Convert all convolutional layers, batch norms, and parameters to channels-last (NHWC) memory format."""
+        self.to(memory_format=torch.channels_last)
+        self.channels_last = True
+        return self
+
     def forward(
         self, x: torch.Tensor, return_aux: bool = False
     ) -> Tuple[torch.Tensor, ...]:
+        if getattr(self, "channels_last", False) and x.dim() == 4 and not x.is_contiguous(memory_format=torch.channels_last):
+            x = x.to(memory_format=torch.channels_last)
+
         # Input trunk
         out = F.relu(self.bn_in(self.conv_in(x)))
 

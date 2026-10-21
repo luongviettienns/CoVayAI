@@ -590,5 +590,22 @@
   - Triển khai phương thức `check_budget_limits()` và `save_cost_report()` tích hợp trực tiếp với module `benchmarks/cost_report.py`.
   - Khởi tạo và phân luồng độc lập `self.val_buffer` từ `split_games_train_val` khi kích hoạt `val_ratio > 0.0`.
 - [x] **Toàn Bộ 179/179 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
-  - Vượt qua 100% bài test trên toàn bộ 23 test modules trong 51.80 giây.
-
+### Phase 34: Master Plan V4 — PR 4: Opt-in Benchmarked Memory Format & Compile (P7 & C5) [HOÀN THÀNH - 186/186 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_benchmarks/test_torch_perf.py`)**:
+  - Xây dựng 7 bài kiểm thử chuyên sâu về tối ưu hóa bộ nhớ và biên dịch PyTorch:
+    - `test_channels_last_output_equivalence_standard_heads`: Xác thực tính tương đương số học tuyệt đối (numerical equivalence, sai số $< 10^{-5}$) giữa bố cục bộ nhớ chuẩn Contiguous (NCHW) và Channels-Last (NHWC) trên mô hình ResNet hai đầu Policy/Value chuẩn.
+    - `test_channels_last_output_equivalence_aux_heads`: Kiểm chứng tính tương đương đầu ra đối với mạng mở rộng có các đầu phụ trợ Auxiliary Heads (dự đoán quyền kiểm soát bàn cờ Ownership và chênh lệch điểm số Score Lead) trong bố cục Channels-Last.
+    - `test_trainer_integration_with_channels_last`: Kiểm chứng lớp `Trainer` tối ưu hóa gradient mượt mà trên các tensor channels-last, cập nhật trọng số thành công mà không phát sinh xung đột bố cục (stride/layout mismatch) hay NaN.
+    - `test_benchmark_memory_format_returns_valid_metrics`: Xác thực hàm `benchmark_memory_format` tự động đo đạc đầy đủ độ trễ p50, p95, thông lượng đánh giá (evals/sec), hệ số tăng tốc (speedup ratio) và sai số đầu ra cực đại.
+    - `test_benchmark_training_throughput_returns_valid_metrics`: Xác thực hàm `benchmark_training_throughput` tính toán chuẩn xác tốc độ huấn luyện thực tế (steps/sec) và thời gian trung bình mỗi bước (ms/step).
+    - `test_benchmark_compile_safe_fallback`: Kiểm chứng cơ chế bọc an toàn quanh `torch.compile`, tự động phát hiện khả năng tương thích của môi trường phần cứng/hệ điều hành (Triton/MSVC trên Windows) và fallback mềm sang chế độ eager khi không hỗ trợ.
+    - `test_pipeline_config_includes_perf_flags`: Xác thực `PipelineConfig` tiếp nhận và kiểm định hợp lệ các cờ cấu hình hiệu năng cao `channels_last`, `compile_model` và `cudnn_benchmark`.
+- [x] **Tối Ưu Hóa Bố Cục Bộ Nhớ Channels-Last & Biên Dịch (`nn/model.py`, `train/trainer.py`, `config.py`, `main.py`)**:
+  - Bổ sung phương thức `AlphaZeroNet.to_channels_last()` chuyển đổi toàn bộ lớp tích chập Conv2d và khối ResidualBlock sang định dạng bộ nhớ `torch.channels_last`.
+  - Tự động chuẩn hóa tensor đầu vào sang Channels-Last trong `forward()` và `predict_batch()`.
+  - Tích hợp cờ `channels_last` và `compile_model` vào `Trainer.__init__`, `train_step()` và `evaluate()`.
+  - Bổ sung các cờ CLI `--channels-last`, `--compile-model`, `--no-cudnn-benchmark` vào pipeline chính `main.py`.
+- [x] **Module Đo Lường & Báo Cáo Hiệu Năng Độc Lập (`benchmarks/torch_perf.py`)**:
+  - Cung cấp công cụ benchmark CLI độc lập hỗ trợ cấu hình đa dạng kích thước bàn cờ (9×9, 19×19), kiến trúc ResNet (số blocks, số filters), batch size và lưu trữ kết quả kiểm toán dưới dạng JSON.
+- [x] **Toàn Bộ 186/186 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 24 test modules trong 61.90 giây.

@@ -71,6 +71,8 @@ class Trainer:
         ownership_coef: float = 0.25,
         score_coef: float = 0.02,
         device: Optional[torch.device] = None,
+        channels_last: bool = False,
+        compile_model: bool = False,
     ):
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
@@ -78,6 +80,22 @@ class Trainer:
         self.ownership_coef = ownership_coef
         self.score_coef = score_coef
         self.global_step: int = 0
+        self.channels_last = channels_last
+
+        if self.channels_last:
+            if hasattr(self.model, "to_channels_last"):
+                self.model.to_channels_last()
+            else:
+                self.model.to(memory_format=torch.channels_last)
+
+        self.is_compiled = False
+        if compile_model:
+            try:
+                self.model = torch.compile(self.model)
+                self.is_compiled = True
+                logger.info("[Trainer] torch.compile enabled successfully.")
+            except Exception as e:
+                logger.warning(f"[Trainer] torch.compile failed or unsupported on this platform: {e}. Falling back to standard eager mode.")
 
         # Separate parameters into 2D/4D (weights: Conv, Linear) and 1D (biases, BatchNorm)
         decay_params = []
@@ -137,6 +155,8 @@ class Trainer:
         """
         self.model.train()
         states = states.to(self.device)
+        if self.channels_last and states.dim() == 4 and not states.is_contiguous(memory_format=torch.channels_last):
+            states = states.to(memory_format=torch.channels_last)
         target_pis = target_pis.to(self.device)
         target_zs = target_zs.to(self.device)
 
@@ -347,6 +367,8 @@ class Trainer:
                 )
 
             states = states.to(self.device)
+            if self.channels_last and states.dim() == 4 and not states.is_contiguous(memory_format=torch.channels_last):
+                states = states.to(memory_format=torch.channels_last)
             target_pis = target_pis.to(self.device)
             target_zs = target_zs.to(self.device)
 

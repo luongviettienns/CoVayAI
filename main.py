@@ -147,6 +147,11 @@ class PipelineConfig:
     seed: Optional[int] = None
     run_id: Optional[str] = None
 
+    # Performance & Optimization (PR 4)
+    channels_last: bool = default_cfg.CHANNELS_LAST
+    compile_model: bool = default_cfg.COMPILE_MODEL
+    cudnn_benchmark: bool = default_cfg.CUDNN_BENCHMARK
+
     def validate(self) -> None:
         """Validate pipeline configuration bounds."""
         if self.board_size < 3:
@@ -229,6 +234,10 @@ class AlphaZeroPipeline:
                     f"To prevent data corruption, specify a clean checkpoint directory, pass --resume, or use --force-new."
                 )
 
+        # cuDNN Benchmark
+        if cfg.cudnn_benchmark and self.device.type == "cuda":
+            torch.backends.cudnn.benchmark = True
+
         # Initialize Best and Candidate models
         self.best_model = AlphaZeroNet(
             board_size=cfg.board_size,
@@ -243,6 +252,10 @@ class AlphaZeroPipeline:
             num_filters=cfg.num_filters,
             aux_heads=cfg.aux_heads,
         ).to(self.device)
+
+        if cfg.channels_last:
+            self.best_model.to_channels_last()
+            self.candidate_model.to_channels_last()
 
         # Replay Buffer & Validation Buffer
         self.buffer = ReplayBuffer(capacity=cfg.buffer_size, board_size=cfg.board_size)
@@ -264,6 +277,8 @@ class AlphaZeroPipeline:
             use_amp=cfg.use_amp and self.device.type == "cuda",
             ownership_coef=cfg.ownership_coef,
             score_coef=cfg.score_coef,
+            channels_last=cfg.channels_last,
+            compile_model=cfg.compile_model,
         )
 
         # Elo Tracker
@@ -753,9 +768,12 @@ def main() -> None:
     parser.add_argument("--max-budget-usd", type=float, default=default_cfg.MAX_BUDGET_USD, help="Maximum compute budget in USD before safe stop")
     parser.add_argument("--max-wallclock-hours", type=float, default=default_cfg.MAX_WALLCLOCK_HOURS, help="Maximum training wallclock duration in hours before safe stop")
     parser.add_argument("--gpu-price-per-hour", type=float, default=default_cfg.GPU_PRICE_PER_HOUR, help="Cost per GPU hour in USD for budget tracking")
+    parser.add_argument("--channels-last", action="store_true", default=default_cfg.CHANNELS_LAST, help="Enable PyTorch channels-last (NHWC) memory format for Tensor Core acceleration")
+    parser.add_argument("--compile-model", action="store_true", default=default_cfg.COMPILE_MODEL, help="Enable torch.compile JIT optimization for training model")
+    parser.add_argument("--no-cudnn-benchmark", action="store_false", dest="cudnn_benchmark", help="Disable cuDNN autotuner benchmark")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
     parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
-    parser.set_defaults(resume=True, progress_bar=True, gating=True)
+    parser.set_defaults(resume=True, progress_bar=True, gating=True, cudnn_benchmark=True)
     args = parser.parse_args()
 
     arena_sims = args.arena_sims if args.arena_sims is not None else args.sims
@@ -797,6 +815,9 @@ def main() -> None:
         max_budget_usd=args.max_budget_usd,
         max_wallclock_hours=args.max_wallclock_hours,
         gpu_price_per_hour=args.gpu_price_per_hour,
+        channels_last=args.channels_last,
+        compile_model=args.compile_model,
+        cudnn_benchmark=args.cudnn_benchmark,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

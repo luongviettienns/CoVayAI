@@ -127,9 +127,9 @@ class SelfPlayActorPool:
         board_size: int = 9,
         num_simulations: int = 200,
         c_puct: float = 1.5,
-        dirichlet_alpha: float = 0.25,
+        dirichlet_alpha: Optional[float] = None,
         dirichlet_eps: float = 0.25,
-        temp_moves: int = 12,
+        temp_moves: Optional[int] = None,
         resign_threshold: float = -0.9,
         resign_disable_frac: float = 0.10,
         disable_resign: Optional[bool] = None,
@@ -139,6 +139,10 @@ class SelfPlayActorPool:
         progress_bar: bool = False,
         game_callback: Optional[Callable[[int, GameResult], None]] = None,
         seed: Optional[int] = None,
+        playout_cap_randomization: bool = False,
+        fast_sims: Optional[int] = None,
+        full_search_prob: float = 0.25,
+        train_only_full_search: bool = True,
     ) -> List[GameResult]:
         """
         Generate games across the actor pool concurrently.
@@ -169,6 +173,10 @@ class SelfPlayActorPool:
                 "max_moves": max_moves,
                 "komi": komi,
                 "adjudicate_truncated": adjudicate_truncated,
+                "playout_cap_randomization": playout_cap_randomization,
+                "fast_sims": fast_sims,
+                "full_search_prob": full_search_prob,
+                "train_only_full_search": train_only_full_search,
             }
             self.task_queue.put((game_idx, game_kwargs))
 

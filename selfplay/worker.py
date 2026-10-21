@@ -28,6 +28,8 @@ class GameResult:
     seed: Optional[int] = None
     board_size: int = 9
     komi: float = 7.5
+    full_search_count: int = 0
+    fast_search_count: int = 0
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -44,9 +46,9 @@ def play_selfplay_game(
     board_size: int = 9,
     num_simulations: int = 200,
     c_puct: float = 1.5,
-    dirichlet_alpha: float = 0.25,
+    dirichlet_alpha: Optional[float] = None,
     dirichlet_eps: float = 0.25,
-    temp_moves: int = 12,
+    temp_moves: Optional[int] = None,
     resign_threshold: float = -0.9,
     disable_resign: bool = False,
     max_moves: Optional[int] = None,
@@ -54,29 +56,44 @@ def play_selfplay_game(
     device: Optional[torch.device] = None,
     initial_moves: Optional[List[int]] = None,
     adjudicate_truncated: Optional[bool] = None,
+    playout_cap_randomization: bool = False,
+    fast_sims: Optional[int] = None,
+    full_search_prob: float = 0.25,
+    train_only_full_search: bool = True,
 ) -> GameResult:
     """
     Play one full self-play game and collect training tuples of (state, pi, z).
+    Supports Playout Cap Randomization (KataGo / AlphaZero speedup) and board-dependent exploration.
     
     Args:
         model: Neural network model for MCTS evaluations
         board_size: Size of Go board (default 9)
-        num_simulations: Simulations per MCTS search step
+        num_simulations: Simulations per MCTS search step (full search)
         c_puct: Exploration factor for PUCT
         dirichlet_alpha, dirichlet_eps: Dirichlet noise hyperparameters
-        temp_moves: Number of opening moves with temperature = 1.0
+        temp_moves: Number of opening moves with temperature = 1.0 (defaults to size-dependent)
         resign_threshold: Value score threshold below which player resigns
         disable_resign: If True, do not allow resignation
         max_moves: Maximum game length cap
         komi: Area scoring compensation for White (default 7.5)
         device: Torch device (CUDA or CPU)
         initial_moves: Optional list of opening actions to apply before self-play begins
+        adjudicate_truncated: Whether to score truncated games
+        playout_cap_randomization: If True, alternate fast and full searches
+        fast_sims: Simulations for fast search steps (default: num_simulations // 3)
+        full_search_prob: Probability of performing full search (default: 0.25)
+        train_only_full_search: If True, only train policy on full search positions
         
     Returns:
         GameResult containing samples and rich match metadata.
     """
+    from mcts.search import get_default_temp_moves
+
     actual_max_moves = max_moves if max_moves is not None else 2 * (board_size ** 2)
     board = Board(size=board_size, max_moves=actual_max_moves)
+    actual_temp_moves = temp_moves if temp_moves is not None else get_default_temp_moves(board_size)
+    actual_fast_sims = fast_sims if fast_sims is not None else max(1, num_simulations // 3)
+
     mcts = MCTS(
         model=model,
         num_simulations=num_simulations,
@@ -88,9 +105,11 @@ def play_selfplay_game(
         device=device,
     )
 
-    trajectory: List[Tuple[np.ndarray, np.ndarray, int]] = []
+    trajectory: List[Tuple[np.ndarray, np.ndarray, int, bool]] = []
     resigned_player: Optional[int] = None
     step = 0
+    full_search_count = 0
+    fast_search_count = 0
 
     if initial_moves:
         for m in initial_moves:
@@ -101,10 +120,22 @@ def play_selfplay_game(
 
     while not board.is_game_over():
         features = extract_features(board)
-        temp = 1.0 if step < temp_moves else 0.0
+        temp = 1.0 if step < actual_temp_moves else 0.0
+
+        if playout_cap_randomization:
+            is_full = (np.random.random() < full_search_prob)
+            sims_for_move = num_simulations if is_full else actual_fast_sims
+        else:
+            is_full = True
+            sims_for_move = num_simulations
+
+        if is_full:
+            full_search_count += 1
+        else:
+            fast_search_count += 1
 
         # MCTS search always returns soft visit count distribution (tau = 1.0)
-        pi = mcts.search(board)
+        pi = mcts.search(board, num_simulations=sims_for_move)
 
         # Check for resignation (only after step 10 to avoid premature quits)
         if not disable_resign and step >= 10:
@@ -116,7 +147,7 @@ def play_selfplay_game(
         action = select_action(pi, temperature=temp)
 
         # Store soft target pi (tau = 1.0) for training
-        trajectory.append((features, pi, board.current_player))
+        trajectory.append((features, pi, board.current_player, is_full))
 
         # Advance board and MCTS search tree with strict legality assertion
         success = board.play(action)
@@ -162,7 +193,9 @@ def play_selfplay_game(
     samples: List[Tuple[np.ndarray, np.ndarray, float]] = []
     # If truncated and not explicitly adjudicated, do NOT create fake z outcomes from tentative score!
     if not is_truncated or effective_adjudicate:
-        for s, p_target, player in trajectory:
+        for s, p_target, player, is_full in trajectory:
+            if playout_cap_randomization and train_only_full_search and not is_full:
+                continue
             z = 1.0 if player == winner else -1.0
             samples.append((s, p_target, z))
 
@@ -179,6 +212,8 @@ def play_selfplay_game(
         resigned_by=resigned_player,
         board_size=board_size,
         komi=komi,
+        full_search_count=full_search_count,
+        fast_search_count=fast_search_count,
     )
 
 
@@ -188,9 +223,9 @@ def generate_selfplay_games(
     board_size: int = 9,
     num_simulations: int = 200,
     c_puct: float = 1.5,
-    dirichlet_alpha: float = 0.25,
+    dirichlet_alpha: Optional[float] = None,
     dirichlet_eps: float = 0.25,
-    temp_moves: int = 12,
+    temp_moves: Optional[int] = None,
     resign_threshold: float = -0.9,
     resign_disable_frac: float = 0.10,
     disable_resign: Optional[bool] = None,
@@ -204,6 +239,10 @@ def generate_selfplay_games(
     max_batch_size: int = 32,
     max_wait_ms: float = 2.0,
     use_amp: bool = False,
+    playout_cap_randomization: bool = False,
+    fast_sims: Optional[int] = None,
+    full_search_prob: float = 0.25,
+    train_only_full_search: bool = True,
 ) -> List[Tuple[np.ndarray, np.ndarray, float]]:
     """
     Generate multiple self-play games sequentially or concurrently across multiple worker processes.
@@ -237,6 +276,10 @@ def generate_selfplay_games(
                 adjudicate_truncated=adjudicate_truncated,
                 progress_bar=progress_bar,
                 game_callback=game_callback,
+                playout_cap_randomization=playout_cap_randomization,
+                fast_sims=fast_sims,
+                full_search_prob=full_search_prob,
+                train_only_full_search=train_only_full_search,
             )
             for r in results:
                 all_samples.extend(r.samples)
@@ -275,6 +318,10 @@ def generate_selfplay_games(
             komi=komi,
             device=device,
             adjudicate_truncated=adjudicate_truncated,
+            playout_cap_randomization=playout_cap_randomization,
+            fast_sims=fast_sims,
+            full_search_prob=full_search_prob,
+            train_only_full_search=train_only_full_search,
         )
         all_samples.extend(game_result.samples)
 

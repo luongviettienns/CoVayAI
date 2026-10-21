@@ -101,6 +101,10 @@ class PipelineConfig:
     num_workers: int = 1
     infer_batch_size: int = default_cfg.INFER_BATCH_SIZE
     infer_max_wait_ms: float = 2.0
+    playout_cap_randomization: bool = default_cfg.PLAYOUT_CAP_RANDOMIZATION
+    fast_sims: int = default_cfg.FAST_SIMS
+    full_search_prob: float = default_cfg.FULL_SEARCH_PROB
+    train_only_full_search: bool = default_cfg.TRAIN_ONLY_FULL_SEARCH
 
     # Training
     optimizer: str = default_cfg.OPTIMIZER
@@ -392,6 +396,10 @@ class AlphaZeroPipeline:
             max_batch_size=self.config.infer_batch_size,
             max_wait_ms=self.config.infer_max_wait_ms,
             use_amp=self.config.use_amp and self.device.type == "cuda",
+            playout_cap_randomization=self.config.playout_cap_randomization,
+            fast_sims=self.config.fast_sims,
+            full_search_prob=self.config.full_search_prob,
+            train_only_full_search=self.config.train_only_full_search,
         )
 
         # Save buffer once per iteration to avoid excessive I/O bottleneck
@@ -597,6 +605,9 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=None, help="Global random seed for reproducibility")
     parser.add_argument("--force-new", action="store_true", help="Allow starting fresh run in existing checkpoint directory")
     parser.add_argument("--no-resume", action="store_false", dest="resume", help="Do not resume from existing checkpoints")
+    parser.add_argument("--playout-cap-randomization", action="store_true", default=default_cfg.PLAYOUT_CAP_RANDOMIZATION, help="Enable playout cap randomization (fast vs full MCTS searches)")
+    parser.add_argument("--fast-sims", type=int, default=default_cfg.FAST_SIMS, help="Fast search simulation budget for playout cap randomization")
+    parser.add_argument("--full-search-prob", type=float, default=default_cfg.FULL_SEARCH_PROB, help="Probability of full search under playout cap randomization")
     parser.add_argument("--no-progress", action="store_false", dest="progress_bar", help="Disable live progress bar")
     parser.add_argument("--no-gating", action="store_false", dest="gating", help="Disable Arena gating (Continuous AlphaZero 2018 training)")
     parser.set_defaults(resume=True, progress_bar=True, gating=True)
@@ -627,6 +638,9 @@ def main() -> None:
         seed=args.seed,
         num_workers=args.num_workers,
         infer_batch_size=args.infer_batch_size,
+        playout_cap_randomization=args.playout_cap_randomization,
+        fast_sims=args.fast_sims,
+        full_search_prob=args.full_search_prob,
     )
 
     pipeline = AlphaZeroPipeline(cfg)

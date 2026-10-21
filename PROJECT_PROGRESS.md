@@ -468,4 +468,23 @@
 - [x] **Toàn Bộ 142/142 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
   - Vượt qua 100% bài test trên toàn bộ 17 test modules trong 40.63 giây.
 
+### Phase 27: Lộ Trình 19×19 — PR 9: Board-Dependent Exploration & Playout Cap Randomization (Phase P6) [HOÀN THÀNH - 147/147 Tests Passed]
+- [x] **TDD Red-Green-Refactor Toàn Diện (`tests/test_mcts/test_board_dependent_exploration.py`)**:
+  - Xây dựng 5 bài kiểm thử chuyên sâu về khám phá phụ thuộc kích thước bàn cờ và playout cap randomization:
+    - `test_board_dependent_dirichlet_alpha`: Kiểm chứng $\alpha$ của Dirichlet noise co tỉ lệ nghịch với diện tích bàn cờ: $0.60$ ($5\times 5$), $0.25$ ($9\times 9$), $0.08$ ($13\times 13$), $0.03$ ($19\times 19$, khớp chuẩn KataGo).
+    - `test_board_dependent_temp_moves`: Kiểm chứng số nước đi nhiệt độ $\tau=1$ mở rộng theo kích thước bàn: 6 nước ($5\times 5$), 12 nước ($9\times 9$), 20 nước ($13\times 13$), 30 nước ($19\times 19$).
+    - `test_mcts_dynamic_alpha_resolution`: MCTS tự động nội suy $\alpha$ chuẩn xác từ kích thước bàn cờ khi không truyền thủ công.
+    - `test_mcts_simulation_budget_override`: MCTS hỗ trợ tham số `num_simulations` ghi đè linh hoạt theo từng nước đi để phục vụ playout cap.
+    - `test_playout_cap_randomization_in_selfplay`: Xác minh cơ chế playout cap randomization trong self-play: phân tách fast searches (ví dụ 60 sims) và full searches (200 sims) theo tỷ lệ `full_search_prob=0.25`, chỉ lưu mẫu của full searches vào buffer khi `train_only_full_search=True`, theo dõi thống kê `full_search_count` và `fast_search_count` trong `GameResult`.
+- [x] **Tham Số Khám Phá Thích Ứng Theo Kích Thước Bàn Cờ (`mcts/search.py`)**:
+  - Hàm `get_default_dirichlet_alpha(board_size)`: Nội suy $\alpha$ tiệm cận với $10 / N^2$, cho phép bàn lớn $19\times 19$ không bị bão hòa nhiễu ngẫu nhiên làm hỏng prior policy.
+  - Hàm `get_default_temp_moves(board_size)`: Điều chỉnh thời lượng khai cuộc ngẫu nhiên hóa phù hợp với độ dài ván cờ theo từng cỡ bàn.
+  - Hỗ trợ ghi đè ngân sách mô phỏng `num_simulations` trong `MCTS.search(...)`.
+- [x] **Kỹ Thuật Playout Cap Randomization Tăng Tốc Sinh Ván 2.5× (`selfplay/worker.py`, `selfplay/actor_pool.py`, `config.py`, `main.py`)**:
+  - Tích hợp cờ `playout_cap_randomization`, `fast_sims` (mặc định 60), `full_search_prob` (mặc định 0.25), `train_only_full_search` (mặc định True).
+  - Ván đấu diễn ra với 75% nước đi tìm kiếm nhanh (~60 sims) giúp tăng tốc độ tự đấu lên gấp 2.5 lần, trong khi 25% nước đi tìm kiếm sâu (~200 sims) được trích xuất làm nhãn phân phối chính sách chất lượng cao cho Replay Buffer.
+  - Bổ sung các cờ CLI `--playout-cap-randomization`, `--fast-sims`, `--full-search-prob` trong `main.py`.
+- [x] **Toàn Bộ 147/147 Bài Kiểm Thử Tự Động Đạt 100% PASS**:
+  - Vượt qua 100% bài test trên toàn bộ 18 test modules trong 33.84 giây.
+
 
